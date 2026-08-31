@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  sentinel-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentinel-zero-trust-gateway
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_CHAIN_ID=80002
+      - NEXT_PUBLIC_RPC_URL=https://polygon-amoy.drpc.org
+      - NEXT_PUBLIC_CONTRACT_ADDRESS=0x71C94bC817D1Ff8902898B677A016dAf3460A9C1
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
