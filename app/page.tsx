@@ -119,7 +119,7 @@ export default function Home() {
     setIsProcessing(true);
     try {
       if (typeof window === 'undefined' || !(window as any).ethereum) {
-        handleDemoConnect();
+        setTxStatus('No Web3 wallet detected. Please install MetaMask or another Web3 browser extension.');
         return;
       }
 
@@ -138,38 +138,25 @@ export default function Home() {
 
       try {
         await signer.signMessage(message);
+        setIsAuthenticated(true);
+        setTxStatus(`Authenticated successfully. Cryptographic session established for [${userRole}].`);
       } catch (signErr: any) {
         if (signErr?.code === 'ACTION_REJECTED' || signErr?.code === 4001) {
-          setTxStatus('Signature rejected by user. Fallback demo session authorized.');
+          setTxStatus('Signature rejected by user. Authentication aborted.');
+        } else {
+          setTxStatus(`Signature failed: ${signErr?.message || 'Unknown error'}`);
         }
       }
-
-      setIsAuthenticated(true);
-      setTxStatus(`Authenticated successfully. Cryptographic session established for [${userRole}].`);
     } catch (err: any) {
       console.error('Authentication error:', err);
       if (err?.code === 'ACTION_REJECTED' || err?.code === 4001) {
         setTxStatus('Authentication canceled in wallet.');
       } else {
-        setTxStatus(`Authentication note: ${err?.shortMessage || err?.message || 'Connecting in demo mode.'}`);
-        handleDemoConnect();
+        setTxStatus(`Authentication error: ${err?.shortMessage || err?.message || 'Failed to connect wallet.'}`);
       }
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  // Instant Demo Connect (offline-ready)
-  const handleDemoConnect = () => {
-    const randomHex = Array.from({ length: 4 }, () =>
-      Math.floor(Math.random() * 65536)
-        .toString(16)
-        .padStart(4, '0')
-    ).join('');
-    const demoAddr = `0x71a9${randomHex}92c4`;
-    setWalletAddress(demoAddr);
-    setIsAuthenticated(true);
-    setTxStatus(`Demo Web3 Identity verified. Cryptographic session key active for [${userRole}].`);
   };
 
   const handleDisconnect = () => {
@@ -415,7 +402,6 @@ export default function Home() {
           isProcessing={isProcessing}
           onRoleChange={setUserRole}
           onConnect={handleConnectWallet}
-          onDemoConnect={handleDemoConnect}
           onDisconnect={handleDisconnect}
           onSwitchNetwork={switchOrAddPolygonAmoy}
         />

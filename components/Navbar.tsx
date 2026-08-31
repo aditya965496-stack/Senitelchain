@@ -8,7 +8,6 @@ interface NavbarProps {
   isProcessing: boolean;
   onRoleChange: (role: UserRole) => void;
   onConnect: () => void;
-  onDemoConnect: () => void;
   onDisconnect: () => void;
   onSwitchNetwork: () => void;
 }
@@ -20,7 +19,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   isProcessing,
   onRoleChange,
   onConnect,
-  onDemoConnect,
   onDisconnect,
   onSwitchNetwork,
 }) => {
@@ -90,14 +88,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <span>🦊</span>
               <span>{isProcessing ? 'Connecting...' : 'Connect Wallet'}</span>
-            </button>
-
-            <button
-              onClick={onDemoConnect}
-              title="Quick Demo Mode without MetaMask extension"
-              className="text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl transition-all border border-slate-200"
-            >
-              ⚡ Demo Identity
             </button>
           </div>
         )}
