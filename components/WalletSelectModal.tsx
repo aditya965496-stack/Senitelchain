@@ -143,17 +143,17 @@ export const WalletSelectModal: React.FC<WalletSelectModalProps> = ({
                       {wallet.name}
                     </span>
                     {wallet.id === 'metamask' && (
-                      <span className="text-[9px] bg-amber-50 text-amber-700 font-mono px-1.5 py-0.2 rounded border border-amber-200">
+                      <span className="text-[10px] bg-amber-50 text-amber-700 font-sans font-medium px-1.5 py-0.5 rounded border border-amber-200">
                         Default EVM
                       </span>
                     )}
                     {wallet.id === 'rabby' && (
-                      <span className="text-[9px] bg-indigo-50 text-indigo-700 font-mono px-1.5 py-0.2 rounded border border-indigo-200">
+                      <span className="text-[10px] bg-indigo-50 text-indigo-700 font-sans font-medium px-1.5 py-0.5 rounded border border-indigo-200">
                         Zero-Trust Simulation
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-500 font-medium leading-tight mt-0.5">
+                  <p className="text-[11px] text-slate-500 font-medium leading-tight mt-0.5">
                     {wallet.description}
                   </p>
                 </div>
@@ -162,13 +162,13 @@ export const WalletSelectModal: React.FC<WalletSelectModalProps> = ({
               {/* Status Badge */}
               <div className="shrink-0 pl-2">
                 {wallet.isInstalled ? (
-                  <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 group-hover:bg-emerald-100 transition-colors">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 group-hover:bg-emerald-100 transition-colors">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                     <span>Ready</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center text-[10px] font-medium text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 group-hover:bg-blue-50 group-hover:text-blue-600 group-hover:border-blue-200 transition-colors">
-                    Install ↗
+                  <span className="inline-flex items-center text-[11px] font-medium text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 group-hover:bg-blue-50 group-hover:text-blue-600 group-hover:border-blue-200 transition-colors">
+                    Install
                   </span>
                 )}
               </div>

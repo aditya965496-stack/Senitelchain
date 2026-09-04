@@ -13,16 +13,16 @@ function assert(condition, message) {
   totalTests++;
   if (condition) {
     passedTests++;
-    console.log(`  ✅ PASS: ${message}`);
+    console.log(`  [PASS]: ${message}`);
   } else {
-    console.error(`  ❌ FAIL: ${message}`);
+    console.error(`  [FAIL]: ${message}`);
     throw new Error(`Test Assertion Failed: ${message}`);
   }
 }
 
 async function runTestSuite() {
   console.log('================================================================');
-  console.log('🛡️  SentinelChain Enterprise Production Test Suite');
+  console.log('SentinelChain Enterprise Production Test Suite');
   console.log('================================================================');
 
   // ==========================================
@@ -305,11 +305,11 @@ async function runTestSuite() {
   // Summary
   // ==========================================
   console.log('\n================================================================');
-  console.log(`🎉 ALL TESTS PASSED: ${passedTests} / ${totalTests} assertions verified successfully!`);
+  console.log(`ALL TESTS PASSED: ${passedTests} / ${totalTests} assertions verified successfully!`);
   console.log('================================================================');
 }
 
 runTestSuite().catch((err) => {
-  console.error('\n❌ Test Suite Failed:', err);
+  console.error('\nTest Suite Failed:', err);
   process.exit(1);
 });

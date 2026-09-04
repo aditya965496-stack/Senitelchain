@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { DIDDocument } from '@/lib/types';
-import { CopyIcon, CheckIcon, DownloadIcon, ShieldIcon } from './Icons';
+import { CopyIcon, CheckIcon, DownloadIcon, ShieldIcon, CloseIcon } from './Icons';
 
 interface DIDDocumentModalProps {
   isOpen: boolean;
@@ -55,9 +55,10 @@ export const DIDDocumentModal: React.FC<DIDDocumentModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center text-sm font-bold transition-all cursor-pointer"
+            className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-all cursor-pointer"
+            title="Close"
           >
-            ✕
+            <CloseIcon className="w-4 h-4" />
           </button>
         </div>
 
@@ -65,13 +66,13 @@ export const DIDDocumentModal: React.FC<DIDDocumentModalProps> = ({
         <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
           {/* Metadata Badges */}
           <div className="flex items-center gap-2 flex-wrap text-xs">
-            <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold border border-slate-200">
+            <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-sans text-[11px] font-medium border border-slate-200">
               Standard: W3C DID Core 1.0
             </span>
-            <span className="bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold border border-emerald-200">
+            <span className="bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-lg font-sans text-[11px] font-medium border border-emerald-200">
               Status: {didDocument.status}
             </span>
-            <span className="bg-blue-50 text-blue-800 px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold border border-blue-200">
+            <span className="bg-blue-50 text-blue-800 px-2.5 py-1 rounded-lg font-sans text-[11px] font-medium border border-blue-200">
               Role: {didDocument.role}
             </span>
           </div>

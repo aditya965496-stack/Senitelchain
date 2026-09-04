@@ -1,4 +1,4 @@
-# 🛡️ SentinelChain | Decentralized Identity (DID), NFT Asset Ownership & RBAC Platform
+# SentinelChain | Decentralized Identity (DID), NFT Asset Ownership & RBAC Platform
 
 [![Production Ready](https://img.shields.io/badge/Status-Production%20Ready-emerald.svg)](#)
 [![Next.js 13](https://img.shields.io/badge/Framework-Next.js%2013-black.svg)](https://nextjs.org/)
@@ -11,7 +11,7 @@ SentinelChain is an enterprise decentralized blockchain platform integrating **D
 
 ---
 
-## 🏛️ Comprehensive Architecture
+## Comprehensive Architecture
 
 ```
                                     ┌────────────────────────────────────────────────────────┐
@@ -45,7 +45,7 @@ SentinelChain is an enterprise decentralized blockchain platform integrating **D
 
 ---
 
-## 🔐 Core Pillars & Features
+## Core Pillars & Features
 
 ### 1. Decentralized Identity (DID) Management
 * **W3C DID Specification**: Each user is bound to a self-sovereign Decentralized Identifier: `did:sentinel:80002:<address>`.
@@ -76,7 +76,7 @@ Every system action is immutably recorded on the blockchain and queryable:
 
 ---
 
-## 🚀 Quick Start & Deployment
+## Quick Start & Deployment
 
 ### 1. Local Development
 ```bash
@@ -114,7 +114,7 @@ To deploy using **Remix IDE**:
 
 ---
 
-## 📡 REST API Endpoints
+## REST API Endpoints
 
 | Method | Route | Description |
 | :--- | :--- | :--- |
@@ -129,7 +129,7 @@ To deploy using **Remix IDE**:
 
 ---
 
-## 🔐 Cryptographic Specifications
+## Cryptographic Specifications
 
 * **Symmetric Cipher:** `AES-256-GCM` (Galois/Counter Mode with 128-bit authentication tag)
 * **Initialization Vector (IV):** Cryptographically random 96-bit vector per file

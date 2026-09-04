@@ -10,7 +10,7 @@ function compileContract() {
 
   const contractPath = path.join(__dirname, '..', 'contracts', 'SentinelAuditRegistry.sol');
   if (!fs.existsSync(contractPath)) {
-    console.error('❌ Error: Contract source file not found at:', contractPath);
+    console.error('[ERROR] Contract source file not found at:', contractPath);
     process.exit(1);
   }
 
@@ -43,9 +43,9 @@ function compileContract() {
     for (const error of output.errors) {
       if (error.severity === 'error') {
         hasError = true;
-        console.error('❌ Compilation Error:', error.formattedMessage);
+        console.error('[ERROR] Compilation Error:', error.formattedMessage);
       } else {
-        console.warn('⚠️ Warning:', error.formattedMessage);
+        console.warn('[WARN]:', error.formattedMessage);
       }
     }
     if (hasError) {
@@ -55,7 +55,7 @@ function compileContract() {
 
   const compiled = output.contracts['SentinelAuditRegistry.sol']['SentinelAuditRegistry'];
   if (!compiled) {
-    console.error('❌ Error: SentinelAuditRegistry contract not found in compilation output.');
+    console.error('[ERROR]: SentinelAuditRegistry contract not found in compilation output.');
     process.exit(1);
   }
 
@@ -73,7 +73,7 @@ function compileContract() {
   const outputPath = path.join(__dirname, '..', 'contracts', 'SentinelAuditRegistry.json');
   fs.writeFileSync(outputPath, JSON.stringify(artifact, null, 2), 'utf8');
 
-  console.log('✅ SentinelAuditRegistry compiled successfully!');
+  console.log('[SUCCESS] SentinelAuditRegistry compiled successfully.');
   console.log('ABI methods count:', compiled.abi.length);
   console.log('Bytecode size:', Math.round(compiled.evm.bytecode.object.length / 2), 'bytes');
   console.log('Artifact saved to:', outputPath);

@@ -10,7 +10,8 @@
 body {
   color: var(--foreground);
   background: var(--background);
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Custom Scrollbar */

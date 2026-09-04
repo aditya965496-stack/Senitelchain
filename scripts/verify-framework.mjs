@@ -16,7 +16,7 @@ if (
   ADMIN_ROLE === ethers.keccak256(ethers.toUtf8Bytes('ADMIN_ROLE')) &&
   MANAGER_ROLE === ethers.keccak256(ethers.toUtf8Bytes('MANAGER_ROLE'))
 ) {
-  console.log('✅ RBAC role definitions match Keccak-256 spec.');
+  console.log('[PASS] RBAC role definitions match Keccak-256 spec.');
 } else {
   throw new Error('RBAC role mismatch');
 }
@@ -41,7 +41,7 @@ const signature = await wallet.signMessage(challenge);
 const recovered = ethers.verifyMessage(challenge, signature);
 
 if (recovered.toLowerCase() === wallet.address.toLowerCase()) {
-  console.log('✅ ECDSA signature verified successfully for DID:', did);
+  console.log('[PASS] ECDSA signature verified successfully for DID:', did);
 } else {
   throw new Error('Signature verification failed');
 }
@@ -69,6 +69,6 @@ const nftMetadata = {
 };
 
 console.log('Sample NFT Metadata:', JSON.stringify(nftMetadata, null, 2));
-console.log('✅ NFT Metadata structure adheres to ERC-721 and DID binding standards.');
+console.log('[PASS] NFT Metadata structure adheres to ERC-721 and DID binding standards.');
 
-console.log('\n🎉 ALL ARCHITECTURAL TESTS PASSED SUCCESSFULLY!');
+console.log('\nALL ARCHITECTURAL TESTS PASSED SUCCESSFULLY.');

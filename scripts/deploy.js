@@ -35,7 +35,7 @@ async function main() {
   const privateKey = process.env.PRIVATE_KEY;
 
   if (!privateKey || privateKey.length < 64) {
-    console.error('❌ Error: PRIVATE_KEY not found or invalid in .env / .env.example');
+    console.error('[ERROR] PRIVATE_KEY not found or invalid in .env / .env.example');
     process.exit(1);
   }
 
@@ -48,7 +48,7 @@ async function main() {
   console.log('Deployer balance:', ethers.formatEther(balance), 'POL');
 
   if (balance === 0n) {
-    console.error('\n❌ Insufficient Balance: Deployer account has 0 POL.');
+    console.error('\n[ERROR] Insufficient Balance: Deployer account has 0 POL.');
     console.error('Please get testnet POL from: https://faucet.polygon.technology/');
     console.error('Target address:', wallet.address);
     process.exit(1);
@@ -56,7 +56,7 @@ async function main() {
 
   const artifactPath = path.join(__dirname, '..', 'contracts', 'SentinelAuditRegistry.json');
   if (!fs.existsSync(artifactPath)) {
-    console.error('❌ Contract artifact not found at:', artifactPath);
+    console.error('[ERROR] Contract artifact not found at:', artifactPath);
     process.exit(1);
   }
 
@@ -70,7 +70,7 @@ async function main() {
   const address = await contract.getAddress();
   const txHash = contract.deploymentTransaction()?.hash;
 
-  console.log('\n✅ SentinelAuditRegistry successfully deployed!');
+  console.log('\n[SUCCESS] SentinelAuditRegistry successfully deployed.');
   console.log('Contract Address:', address);
   console.log('Deployment Tx:', txHash);
   console.log('Explorer URL:', `https://amoy.polygonscan.com/address/${address}`);

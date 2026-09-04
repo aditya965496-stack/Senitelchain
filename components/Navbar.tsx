@@ -41,7 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="font-bold text-xl tracking-tight text-slate-950 font-sans">
               SentinelChain
             </span>
-            <span className="text-[10px] bg-slate-100 text-slate-700 font-mono px-2 py-0.5 rounded-full font-semibold border border-slate-200">
+            <span className="text-[11px] bg-slate-100 text-slate-700 font-sans px-2.5 py-0.5 rounded-full font-medium border border-slate-200">
               v3.0 Enterprise
             </span>
           </div>
@@ -61,7 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
           <span className="font-semibold text-slate-800">Polygon Amoy</span>
-          <span className="text-[10px] font-mono text-slate-400 bg-slate-50 px-1.5 py-0.2 rounded border border-slate-200/60">
+          <span className="text-[11px] font-sans text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/60 tabular-nums">
             80002
           </span>
         </button>
@@ -72,7 +72,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
               <strong className="text-slate-900">{formatAddress(walletAddress)}</strong>
               {connectedWalletType && (
-                <span className="text-[10px] text-indigo-700 bg-indigo-50 font-mono font-semibold px-1.5 py-0.5 rounded border border-indigo-200">
+                <span className="text-[11px] text-indigo-700 bg-indigo-50 font-sans font-medium px-2 py-0.5 rounded border border-indigo-200">
                   {connectedWalletType}
                 </span>
               )}

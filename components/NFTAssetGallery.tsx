@@ -8,6 +8,7 @@ import {
   TagIcon,
   CopyIcon,
   CheckIcon,
+  CloseIcon,
 } from './Icons';
 
 interface NFTAssetGalleryProps {
@@ -263,9 +264,10 @@ export const NFTAssetGallery: React.FC<NFTAssetGalleryProps> = ({
               </h3>
               <button
                 onClick={() => setReallocateTokenId(null)}
-                className="text-slate-400 hover:text-slate-700 text-sm font-bold cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-all cursor-pointer"
+                title="Close"
               >
-                ✕
+                <CloseIcon className="w-4 h-4" />
               </button>
             </div>
 
@@ -327,9 +329,10 @@ export const NFTAssetGallery: React.FC<NFTAssetGalleryProps> = ({
               </div>
               <button
                 onClick={() => setIsMetadataModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 text-sm font-bold cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-all cursor-pointer"
+                title="Close"
               >
-                ✕
+                <CloseIcon className="w-4 h-4" />
               </button>
             </div>
 

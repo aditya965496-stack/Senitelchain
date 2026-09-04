@@ -92,7 +92,7 @@ export const AuditLedgerTable: React.FC<AuditLedgerTableProps> = ({ logs }) => {
               <th className="pb-3 text-right">PolygonScan</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 font-mono text-[11px] text-slate-700">
+          <tbody className="divide-y divide-slate-100 text-xs font-sans text-slate-700">
             {filteredLogs.length === 0 ? (
               <tr>
                 <td colSpan={7} className="py-8 text-center text-slate-400 font-sans">
@@ -102,18 +102,18 @@ export const AuditLedgerTable: React.FC<AuditLedgerTableProps> = ({ logs }) => {
             ) : (
               filteredLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-3 pr-4 text-slate-500 whitespace-nowrap">{log.timestamp}</td>
-                  <td className="py-3 pr-4 font-bold text-slate-900 max-w-[200px] truncate" title={log.assetCid}>
+                  <td className="py-3 pr-4 text-slate-500 whitespace-nowrap tabular-nums">{log.timestamp}</td>
+                  <td className="py-3 pr-4 font-semibold text-slate-900 max-w-[200px] truncate" title={log.assetCid}>
                     <div className="flex items-center gap-1.5">
                       {log.tokenId && (
-                        <span className="text-[10px] bg-slate-900 text-white font-mono px-1.5 py-0.2 rounded font-normal">
+                        <span className="text-[10px] bg-slate-900 text-white font-sans px-1.5 py-0.2 rounded font-medium">
                           #{log.tokenId}
                         </span>
                       )}
-                      <span className="truncate">{log.assetCid}</span>
+                      <span className="truncate font-mono text-xs text-slate-700">{log.assetCid}</span>
                     </div>
                   </td>
-                  <td className="py-3 pr-4" title={log.did || log.userAddress}>
+                  <td className="py-3 pr-4 font-mono text-xs text-slate-600" title={log.did || log.userAddress}>
                     {log.userAddress}
                   </td>
                   <td className="py-3 pr-4 whitespace-nowrap">
@@ -121,7 +121,7 @@ export const AuditLedgerTable: React.FC<AuditLedgerTableProps> = ({ logs }) => {
                       {log.role}
                     </span>
                   </td>
-                  <td className="py-3 pr-4 text-slate-600 whitespace-nowrap">{log.gasUsed}</td>
+                  <td className="py-3 pr-4 text-slate-600 whitespace-nowrap tabular-nums">{log.gasUsed}</td>
                   <td className="py-3 pr-4 whitespace-nowrap">
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-sans font-semibold border ${

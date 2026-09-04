@@ -101,7 +101,7 @@ export const OnChainAuditPanel: React.FC<OnChainAuditPanelProps> = ({
         {/* Status Feedback Box */}
         {txStatus && (
           <div
-            className={`p-3.5 rounded-xl text-xs font-mono leading-relaxed break-all border transition-all ${
+            className={`p-3.5 rounded-xl text-xs font-sans font-medium leading-relaxed break-all border transition-all ${
               isError
                 ? 'bg-rose-50/80 border-rose-200 text-rose-800'
                 : isSuccess
