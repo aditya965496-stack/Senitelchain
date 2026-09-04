@@ -1,5 +1,6 @@
 import React from 'react';
 import { TelemetryStats } from '@/lib/types';
+import { CpuChipIcon, FileTextIcon, LinkChainIcon } from './Icons';
 
 interface TelemetryMetricsProps {
   telemetry: TelemetryStats;
@@ -7,8 +8,9 @@ interface TelemetryMetricsProps {
 
 export const TelemetryMetrics: React.FC<TelemetryMetricsProps> = ({ telemetry }) => {
   return (
-    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-      <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+    <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] space-y-4">
+      {/* Header - Shopeers B2B Style */}
+      <div className="flex justify-between items-center border-b border-slate-100 pb-3.5">
         <div>
           <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
             Zero-Trust Telemetry & Cryptographic Benchmarks
@@ -24,43 +26,61 @@ export const TelemetryMetrics: React.FC<TelemetryMetricsProps> = ({ telemetry })
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-          <span className="block text-[10px] font-semibold text-slate-500 uppercase">
-            Encryption Latency
-          </span>
-          <span className="text-lg font-mono font-bold text-slate-950 mt-1 block">
+        {/* Metric Card 1 */}
+        <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-all">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              Encryption Latency
+            </span>
+            <div className="w-7 h-7 rounded-lg bg-white border border-slate-200/80 flex items-center justify-center text-slate-600 shadow-2xs">
+              <CpuChipIcon className="w-3.5 h-3.5 text-slate-600" />
+            </div>
+          </div>
+          <span className="text-xl font-mono font-bold text-slate-950 block">
             {telemetry.encryptionLatencyMs !== null
               ? `${telemetry.encryptionLatencyMs} ms`
               : 'Awaiting Execution'}
           </span>
-          <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
+          <span className="text-[10px] text-slate-400 mt-1 block font-mono">
             {telemetry.cipherAlgorithm}
           </span>
         </div>
 
-        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-          <span className="block text-[10px] font-semibold text-slate-500 uppercase">
-            Payload Memory Footprint
-          </span>
-          <span className="text-lg font-mono font-bold text-slate-950 mt-1 block">
+        {/* Metric Card 2 */}
+        <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-all">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              Payload Footprint
+            </span>
+            <div className="w-7 h-7 rounded-lg bg-white border border-slate-200/80 flex items-center justify-center text-slate-600 shadow-2xs">
+              <FileTextIcon className="w-3.5 h-3.5 text-slate-600" />
+            </div>
+          </div>
+          <span className="text-xl font-mono font-bold text-slate-950 block">
             {telemetry.payloadFootprintBytes !== null
               ? `${(telemetry.payloadFootprintBytes / 1024).toFixed(2)} KB`
               : 'Awaiting Ingestion'}
           </span>
-          <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
+          <span className="text-[10px] text-slate-400 mt-1 block font-mono">
             Zero-Knowledge In-Memory Buffer
           </span>
         </div>
 
-        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-          <span className="block text-[10px] font-semibold text-slate-500 uppercase">
-            Gas Consumed (Polygon Amoy)
-          </span>
-          <span className="text-lg font-mono font-bold text-slate-950 mt-1 block">
+        {/* Metric Card 3 */}
+        <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-all">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+              Gas Consumed
+            </span>
+            <div className="w-7 h-7 rounded-lg bg-white border border-slate-200/80 flex items-center justify-center text-slate-600 shadow-2xs">
+              <LinkChainIcon className="w-3.5 h-3.5 text-slate-600" />
+            </div>
+          </div>
+          <span className="text-xl font-mono font-bold text-slate-950 block">
             {telemetry.gasUsed || 'Awaiting Transaction'}
           </span>
-          <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
-            EVM Execution Footprint
+          <span className="text-[10px] text-slate-400 mt-1 block font-mono">
+            Polygon Amoy (80002)
           </span>
         </div>
       </div>

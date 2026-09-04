@@ -5,6 +5,14 @@ const nextConfig = {
   compress: true,
   // Standalone output for lightweight Docker container deployments
   output: process.env.DOCKER_BUILD === '1' ? 'standalone' : undefined,
+  webpack: (config, { isServer }) => {
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      bufferutil: false,
+      'utf-8-validate': false,
+    };
+    return config;
+  },
   async headers() {
     return [
       {

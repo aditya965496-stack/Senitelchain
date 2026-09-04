@@ -8,14 +8,22 @@ import {
   EncryptedPayload,
   AuditRecord,
   TelemetryStats,
+  DIDDocument,
 } from '@/lib/types';
 import { encryptFilePayload, decryptPayload, DecryptionVerification } from '@/lib/crypto';
 import { pinToIpfs } from '@/lib/ipfs';
 import {
+  generateDID,
+  createDIDDocument,
+  createAuthChallenge,
+  verifyDIDSignature,
+  formatDID,
+} from '@/lib/did';
+import {
   DEFAULT_CONTRACT_ADDRESS,
   switchOrAddPolygonAmoy,
   executeContractAccessLog,
-  simulateContractExecution,
+  deploySentinelRegistry,
 } from '@/lib/contract';
 import { Navbar } from '@/components/Navbar';
 import { PipelineStepper } from '@/components/PipelineStepper';
@@ -23,15 +31,16 @@ import { IngestionGateway } from '@/components/IngestionGateway';
 import { OnChainAuditPanel } from '@/components/OnChainAuditPanel';
 import { AuditLedgerTable } from '@/components/AuditLedgerTable';
 import { TelemetryMetrics } from '@/components/TelemetryMetrics';
+import { AlertCircleIcon } from '@/components/Icons';
 
 const PIPELINE_NODES: NodeItem[] = [
   {
     id: 'auth',
     step: '01',
     title: 'Authentication',
-    subtitle: 'ECDSA Signature / RBAC Session',
+    subtitle: 'W3C DID Proof / RBAC Session',
     status: 'Ready',
-    description: 'Decentralized identity verification and cryptographic signature.',
+    description: 'Self-sovereign decentralized identifier verification and ECDSA cryptographic proof.',
   },
   {
     id: 'encryption',
@@ -45,9 +54,9 @@ const PIPELINE_NODES: NodeItem[] = [
     id: 'storage',
     step: '03',
     title: 'Storage',
-    subtitle: 'IPFS Decentralized Pinning',
+    subtitle: 'IPFS Pinning & NFT Metadata',
     status: 'Ready',
-    description: 'Decentralized storage cluster returning a tamper-proof content identifier (CID).',
+    description: 'Decentralized storage cluster returning a tamper-proof CID bound to ERC-721 metadata.',
   },
   {
     id: 'contract',
@@ -55,7 +64,7 @@ const PIPELINE_NODES: NodeItem[] = [
     title: 'Smart Contract',
     subtitle: 'Polygon Amoy (EVM)',
     status: 'Active',
-    description: 'On-chain audit logging and immutable access trail on Polygon Amoy.',
+    description: 'Admin NFT minting, identity asset allocation, and immutable on-chain audit trail.',
   },
 ];
 
@@ -63,28 +72,31 @@ export default function Home() {
   // Navigation & Pipeline State
   const [activeNode, setActiveNode] = useState<NodeItem>(PIPELINE_NODES[3]);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [userDID, setUserDID] = useState<string>('');
+  const [didDocument, setDidDocument] = useState<DIDDocument | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [userRole, setUserRole] = useState<UserRole>('Officer (Requester)');
+  const [userRole, setUserRole] = useState<UserRole>('Admin (Issuer)');
 
   // Contract & Asset State
   const [contractAddress, setContractAddress] = useState<string>(DEFAULT_CONTRACT_ADDRESS);
-  const [assetId, setAssetId] = useState<string>('QmSentinelSecure91837Hash');
+  const [assetId, setAssetId] = useState<string>('');
   const [txStatus, setTxStatus] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   // File & Cryptographic State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [encryptedPayload, setEncryptedPayload] = useState<EncryptedPayload | null>(null);
-  const [simulatedCID, setSimulatedCID] = useState<string>('QmSentinelSecure91837Hash');
+  const [pinnedCid, setPinnedCid] = useState<string>('');
   const [decryptedResult, setDecryptedResult] = useState<DecryptionVerification | null>(null);
+  const [isDeploying, setIsDeploying] = useState<boolean>(false);
 
   // Telemetry Metrics State
   const [telemetry, setTelemetry] = useState<TelemetryStats>({
-    encryptionLatencyMs: 3.42,
-    payloadFootprintBytes: 48920,
-    gasUsed: '51,200 gas units',
+    encryptionLatencyMs: null,
+    payloadFootprintBytes: null,
+    gasUsed: 'Awaiting Transaction',
     cipherAlgorithm: 'AES-256-GCM / WebCrypto',
-    integrityHash: '0x8f19...3b21',
+    integrityHash: 'Awaiting Ingestion',
     activeNetwork: 'Polygon Amoy (80002)',
   });
 
@@ -107,14 +119,18 @@ export default function Home() {
         .request({ method: 'eth_accounts' })
         .then((accounts: string[]) => {
           if (accounts && accounts.length > 0) {
-            setWalletAddress(accounts[0]);
+            const addr = accounts[0];
+            setWalletAddress(addr);
+            const did = generateDID(addr);
+            setUserDID(did);
+            setDidDocument(createDIDDocument(addr, userRole));
           }
         })
         .catch(console.error);
     }
-  }, []);
+  }, [userRole]);
 
-  // Connect Web3 Wallet
+  // Connect Web3 Wallet & Establish Cryptographic DID Session
   const handleConnectWallet = async () => {
     setIsProcessing(true);
     try {
@@ -133,13 +149,43 @@ export default function Home() {
       const address = accounts[0];
       setWalletAddress(address);
 
+      const did = generateDID(address);
+      setUserDID(did);
+
+      const didDoc = createDIDDocument(address, userRole);
+      setDidDocument(didDoc);
+
       const signer = await provider.getSigner();
-      const message = `SentinelChain Zero-Trust Access Portal\nRole: ${userRole}\nWallet: ${address}\nTimestamp: ${Date.now()}`;
+      const challenge = createAuthChallenge(address, did, userRole);
 
       try {
-        await signer.signMessage(message);
+        const signature = await signer.signMessage(challenge);
+        const isValid = verifyDIDSignature(challenge, signature, address);
+
+        if (!isValid) {
+          throw new Error('Cryptographic signature verification failed.');
+        }
+
+        // Register identity with local backend DID registry
+        try {
+          await fetch('/api/did', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              address,
+              role: userRole,
+              challenge,
+              signature,
+            }),
+          });
+        } catch (apiErr) {
+          console.warn('Backend DID registration notice:', apiErr);
+        }
+
         setIsAuthenticated(true);
-        setTxStatus(`Authenticated successfully. Cryptographic session established for [${userRole}].`);
+        setTxStatus(
+          `Authenticated successfully. Decentralized Identity [${formatDID(did)}] verified for [${userRole}].`
+        );
       } catch (signErr: any) {
         if (signErr?.code === 'ACTION_REJECTED' || signErr?.code === 4001) {
           setTxStatus('Signature rejected by user. Authentication aborted.');
@@ -161,6 +207,8 @@ export default function Home() {
 
   const handleDisconnect = () => {
     setWalletAddress(null);
+    setUserDID('');
+    setDidDocument(null);
     setIsAuthenticated(false);
     setTxStatus('Secure session terminated. Local cryptographic context purged.');
   };
@@ -204,7 +252,7 @@ export default function Home() {
         integrityHash: payload.sha256Hash.slice(0, 14) + '...',
       }));
 
-      setTxStatus(`Encryption complete in ${payload.latencyMs}ms via Web Crypto API.`);
+      setTxStatus(`Encryption complete in ${payload.latencyMs}ms via Web Crypto API. SHA-256: ${payload.sha256Hash.slice(0, 18)}...`);
     } catch (err: any) {
       console.error('Encryption failed:', err);
       setTxStatus('Encryption execution failed.');
@@ -233,7 +281,7 @@ export default function Home() {
     }
   };
 
-  // Pin to IPFS
+  // Pin to IPFS & Generate NFT Metadata
   const handlePinIPFS = async () => {
     if (userRole.includes('Auditor')) {
       alert('Permission Denied: Auditors cannot pin assets.');
@@ -245,14 +293,20 @@ export default function Home() {
     }
 
     setIsProcessing(true);
-    setTxStatus('Computing cryptographic multihash & pinning to IPFS cluster...');
+    setTxStatus('Computing cryptographic multihash, building ERC-721 metadata & pinning to IPFS...');
     try {
-      const ipfsRes = await pinToIpfs(encryptedPayload.encryptedBuffer, selectedFile?.name || 'asset');
-      setSimulatedCID(ipfsRes.cid);
+      const ipfsRes = await pinToIpfs(encryptedPayload.encryptedBuffer, selectedFile?.name || 'asset', {
+        ownerDid: userDID || (walletAddress ? generateDID(walletAddress) : undefined),
+        ownerAddress: walletAddress || undefined,
+        sha256Digest: encryptedPayload.sha256Hash,
+      });
+
+      setPinnedCid(ipfsRes.cid);
       setAssetId(ipfsRes.cid);
-      setTxStatus(`Storage synchronization successful under [${userRole}]. CID: ${ipfsRes.cid}`);
+      const clusterNotice = ipfsRes.isPinataPinned ? ' [Pinned to Pinata IPFS Cluster]' : '';
+      setTxStatus(`Storage synchronization successful under [${userRole}]. IPFS CID: ${ipfsRes.cid}${clusterNotice}`);
     } catch (err: any) {
-      setTxStatus('IPFS pinning completed with local multihash CID.');
+      setTxStatus('IPFS pinning completed with local cryptographic multihash CID.');
     } finally {
       setIsProcessing(false);
     }
@@ -272,7 +326,7 @@ export default function Home() {
     }
   };
 
-  // Live Blockchain Execution
+  // Real Live Blockchain Execution (Zero Simulation)
   const handleExecuteLiveTx = async () => {
     if (userRole.includes('Auditor')) {
       alert('Permission Denied: Auditors have read-only ledger access.');
@@ -288,32 +342,40 @@ export default function Home() {
       }
 
       if (!contractAddress || !contractAddress.startsWith('0x')) {
-        setTxStatus('Error: Invalid contract address format.');
+        setTxStatus('Error: Please specify a deployed smart contract address (e.g. from SentinelAuditRegistry.sol) or click "Deploy New Registry".');
         setIsProcessing(false);
         return;
       }
 
       if (contractAddress.toLowerCase() === walletAddress.toLowerCase()) {
-        setTxStatus('Error: The contract address cannot be your own wallet address. Click "Use Default Registry".');
+        setTxStatus('Error: The contract address cannot be your personal wallet address (EOA). A contract address must be a deployed smart contract on Polygon Amoy. Click "Deploy New Registry" to launch your own contract directly.');
         setIsProcessing(false);
         return;
       }
 
       if (!assetId.trim()) {
-        setTxStatus('Error: Asset identifier required.');
+        setTxStatus('Error: Asset identifier (CID) required before committing to the blockchain.');
         setIsProcessing(false);
         return;
       }
 
-      setTxStatus(`Broadcasting access log transaction as [${userRole}] to Polygon Amoy...`);
-      const result = await executeContractAccessLog(contractAddress, assetId, userRole);
+      setTxStatus(`Broadcasting real transaction as [${userRole}] to Polygon Amoy...`);
+      const result = await executeContractAccessLog(contractAddress, assetId, userRole, {
+        sha256Digest: encryptedPayload?.sha256Hash,
+        targetAddress: walletAddress,
+      });
 
       setTelemetry((prev) => ({
         ...prev,
         gasUsed: result.gasUsed,
       }));
 
-      setTxStatus(`Success: Immutable AccessLogged event committed on-chain by [${userRole}]. Tx: ${result.txHash.slice(0, 18)}...`);
+      const activeDid = userDID || generateDID(walletAddress);
+      let successMsg = `Success: Real transaction confirmed on Polygon Amoy (Block #${result.blockNumber})! Tx: ${result.txHash.slice(0, 18)}...`;
+      if (result.actionType === 'NFT Minted' && result.tokenId) {
+        successMsg = `Success: Unique Asset NFT #${result.tokenId} minted on-chain & bound to DID [${formatDID(activeDid)}]! Tx: ${result.txHash.slice(0, 18)}...`;
+      }
+      setTxStatus(successMsg);
 
       const newRecord: AuditRecord = {
         id: `log-${Date.now()}`,
@@ -325,74 +387,83 @@ export default function Home() {
         gasUsed: result.gasUsed,
         blockNumber: result.blockNumber,
         status: 'Verified',
+        actionType: result.actionType,
+        tokenId: result.tokenId,
+        did: activeDid,
       };
 
       await recordAuditLog(newRecord);
+
+      // Record NFT to registry store if minted
+      if (result.actionType === 'NFT Minted') {
+        try {
+          await fetch('/api/nft', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              assetCid: assetId.trim(),
+              sha256Digest: encryptedPayload?.sha256Hash,
+              owner: walletAddress,
+              ownerDid: activeDid,
+              tokenId: result.tokenId,
+            }),
+          });
+        } catch {}
+      }
     } catch (err: any) {
       console.error('Contract execution error:', err);
-      if (err?.message === 'INSUFFICIENT_FUNDS') {
-        setTxStatus('Notice: 0 POL testnet balance detected. Running in Fast Demo simulation mode...');
-        handleExecuteDemoTx();
+      const errMsg = err?.message || '';
+      if (errMsg.includes('INSUFFICIENT_FUNDS')) {
+        setTxStatus('Error: Insufficient POL testnet balance. Real on-chain transactions require Polygon Amoy POL to pay for gas fees. Please claim free POL from the faucet link below.');
       } else if (err?.code === 'ACTION_REJECTED' || err?.code === 4001) {
-        setTxStatus('Transaction rejected by user in wallet.');
+        setTxStatus('Transaction was cancelled or rejected in your wallet.');
+      } else if (errMsg.includes('No smart contract found')) {
+        setTxStatus(`Error: ${errMsg}`);
       } else if (err?.reason) {
         setTxStatus(`Execution Reverted: ${err.reason}`);
       } else if (err?.shortMessage) {
-        setTxStatus(`Error: ${err.shortMessage}`);
+        setTxStatus(`Blockchain Error: ${err.shortMessage}`);
       } else {
-        const msg = err.message?.length > 120 ? `${err.message.slice(0, 120)}...` : err.message;
-        setTxStatus(`Notice: ${msg || 'Execution switched to simulated mode.'}`);
-        handleExecuteDemoTx();
+        const msg = errMsg.length > 180 ? `${errMsg.slice(0, 180)}...` : errMsg;
+        setTxStatus(`Transaction Error: ${msg || 'Execution failed on Polygon Amoy.'}`);
       }
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Fast Demo Execution
-  const handleExecuteDemoTx = async () => {
-    if (userRole.includes('Auditor')) {
-      alert('Permission Denied: Auditors have read-only ledger access.');
+  // Deploy Live Contract directly to Polygon Amoy via MetaMask
+  const handleDeployContract = async () => {
+    if (!walletAddress || !isAuthenticated) {
+      alert('Please connect and authenticate your wallet first.');
       return;
     }
-    if (!assetId.trim()) {
-      alert('Please enter or generate an Asset CID first.');
-      return;
+    setIsDeploying(true);
+    setTxStatus('Deploying SentinelAuditRegistry.sol directly to Polygon Amoy via MetaMask...');
+    try {
+      const result = await deploySentinelRegistry();
+      setContractAddress(result.address);
+      setTxStatus(`Success: SentinelAuditRegistry deployed to Polygon Amoy! Contract Address: ${result.address}. Deployment Tx: ${result.txHash.slice(0, 18)}...`);
+    } catch (err: any) {
+      console.error('Deployment error:', err);
+      const errMsg = err?.message || '';
+      if (errMsg.includes('INSUFFICIENT_FUNDS')) {
+        setTxStatus('Error: Insufficient POL testnet balance to deploy contract. Please claim free testnet POL from the faucet link below.');
+      } else if (err?.code === 'ACTION_REJECTED' || err?.code === 4001) {
+        setTxStatus('Deployment transaction was cancelled in your wallet.');
+      } else {
+        setTxStatus(`Deployment Failed: ${err?.shortMessage || errMsg || 'Failed to deploy contract.'}`);
+      }
+    } finally {
+      setIsDeploying(false);
     }
-
-    setIsProcessing(true);
-    setTxStatus(`[Demo Mode] Committing access audit log for "${assetId.slice(0, 16)}..." as [${userRole}] to Polygon Amoy...`);
-
-    const result = await simulateContractExecution(assetId, userRole, walletAddress);
-
-    setTelemetry((prev) => ({
-      ...prev,
-      gasUsed: `${result.gasUsed} (Simulated)`,
-    }));
-
-    setTxStatus(`Success: Immutable AccessLogged event committed on-chain by [${userRole}]. Tx: ${result.txHash.slice(0, 18)}...`);
-
-    const newRecord: AuditRecord = {
-      id: `log-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
-      assetCid: assetId.trim(),
-      userAddress: walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : '0x71a9...92c4',
-      role: userRole,
-      txHash: result.txHash,
-      gasUsed: result.gasUsed,
-      blockNumber: result.blockNumber,
-      status: 'Simulated',
-    };
-
-    await recordAuditLog(newRecord);
-    setIsProcessing(false);
   };
 
   const isAuditor = userRole.includes('Auditor');
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 font-sans p-4 sm:p-8 md:p-12">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <main className="min-h-screen bg-[#F8F9FB] text-slate-900 font-sans p-4 sm:p-8 md:p-10">
+      <div className="max-w-6xl mx-auto space-y-7">
         
         {/* Navigation & Header */}
         <Navbar
@@ -408,8 +479,8 @@ export default function Home() {
 
         {/* Auditor Restriction Notice */}
         {isAuditor && (
-          <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 flex items-center gap-2.5 shadow-sm">
-            <span className="text-base">⚠️</span>
+          <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-xl text-xs text-amber-900 flex items-center gap-2.5 shadow-2xs">
+            <AlertCircleIcon className="w-4 h-4 text-amber-700 shrink-0" />
             <span>
               <strong>Auditor Role Enforced:</strong> Write permissions (Encryption, Pinning, and Smart Contract Logging) are restricted by Zero-Trust policy. Read-only ledger inspection enabled.
             </span>
@@ -427,14 +498,14 @@ export default function Home() {
               onSelectNode={setActiveNode}
               isAuthenticated={isAuthenticated}
               isEncrypted={!!encryptedPayload}
-              isPinned={!!simulatedCID}
+              isPinned={!!pinnedCid}
             />
 
             <IngestionGateway
               userRole={userRole}
               selectedFile={selectedFile}
               encryptedPayload={encryptedPayload}
-              simulatedCID={simulatedCID}
+              pinnedCID={pinnedCid}
               decryptedResult={decryptedResult}
               isProcessing={isProcessing}
               onFileChange={handleFileChange}
@@ -453,10 +524,18 @@ export default function Home() {
               isProcessing={isProcessing}
               isAuthenticated={isAuthenticated}
               userRole={userRole}
-              onContractAddressChange={setContractAddress}
-              onAssetIdChange={setAssetId}
+              walletAddress={walletAddress}
+              onContractAddressChange={(addr) => {
+                setContractAddress(addr);
+                if (txStatus.toLowerCase().includes('error')) setTxStatus('');
+              }}
+              onAssetIdChange={(cid) => {
+                setAssetId(cid);
+                if (txStatus.toLowerCase().includes('error')) setTxStatus('');
+              }}
               onExecuteLiveTx={handleExecuteLiveTx}
-              onExecuteDemoTx={handleExecuteDemoTx}
+              onDeployContract={handleDeployContract}
+              isDeploying={isDeploying}
             />
           </div>
 

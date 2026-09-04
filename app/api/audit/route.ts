@@ -1,33 +1,8 @@
 import { NextResponse } from 'next/server';
 import { AuditRecord } from '@/lib/types';
 
-// In-memory persistent state (can be wired to PostgreSQL/MongoDB in production via PRISMA/DATABASE_URL)
-let GLOBAL_AUDIT_STORE: AuditRecord[] = [
-  {
-    id: 'log-101',
-    timestamp: '2026-08-31 10:15:20 UTC',
-    assetCid: 'bafybeih8392fb1039d91028',
-    userAddress: '0x3a9e...7dc4',
-    role: 'Admin (Issuer)',
-    txHash: '0x4f82d1c9b837492048e910283746a81920384729104829103847291028374619',
-    gasUsed: '48,290 gas',
-    blockNumber: 12490102,
-    status: 'Verified',
-    explorerUrl: 'https://amoy.polygonscan.com/tx/0x4f82d1c9b837492048e910283746a81920384729104829103847291028374619',
-  },
-  {
-    id: 'log-102',
-    timestamp: '2026-08-31 09:40:11 UTC',
-    assetCid: 'bafybeic2948ea9201948271',
-    userAddress: '0x81bF...9368',
-    role: 'Officer (Requester)',
-    txHash: '0x9182374619203847291048291038472910283746192038472910482910283746',
-    gasUsed: '51,400 gas',
-    blockNumber: 12489950,
-    status: 'Verified',
-    explorerUrl: 'https://amoy.polygonscan.com/tx/0x9182374619203847291048291038472910283746192038472910482910283746',
-  },
-];
+// In-memory persistent state (initialized clean without default mock user records)
+let GLOBAL_AUDIT_STORE: AuditRecord[] = [];
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -47,17 +22,19 @@ export async function GET(request: Request) {
       (r) =>
         r.assetCid.toLowerCase().includes(q) ||
         r.userAddress.toLowerCase().includes(q) ||
-        r.txHash.toLowerCase().includes(q)
+        r.txHash.toLowerCase().includes(q) ||
+        (r.actionType && r.actionType.toLowerCase().includes(q)) ||
+        (r.did && r.did.toLowerCase().includes(q))
     );
   }
 
   // Export as CSV if requested
   if (format === 'csv') {
-    const headers = 'ID,Timestamp,Asset_CID,Actor_Address,Role,Gas_Used,Block_Number,Status,Tx_Hash\n';
+    const headers = 'ID,Timestamp,Action_Type,Asset_CID,Token_ID,Actor_Address,DID,Role,Gas_Used,Block_Number,Status,Tx_Hash\n';
     const rows = results
       .map(
         (r) =>
-          `"${r.id}","${r.timestamp}","${r.assetCid}","${r.userAddress}","${r.role}","${r.gasUsed}","${r.blockNumber || 'N/A'}","${r.status}","${r.txHash}"`
+          `"${r.id}","${r.timestamp}","${r.actionType || 'Access Logged'}","${r.assetCid}","${r.tokenId || 'N/A'}","${r.userAddress}","${r.did || 'N/A'}","${r.role}","${r.gasUsed}","${r.blockNumber || 'N/A'}","${r.status}","${r.txHash}"`
       )
       .join('\n');
 
@@ -85,9 +62,9 @@ export async function POST(request: Request) {
 
     const newRecord: AuditRecord = {
       ...body,
-      id: `log-${Date.now()}`,
+      id: body.id || `log-${Date.now()}`,
       timestamp: body.timestamp || new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
-      explorerUrl: `https://amoy.polygonscan.com/tx/${body.txHash}`,
+      explorerUrl: body.explorerUrl || `https://amoy.polygonscan.com/tx/${body.txHash}`,
     };
 
     GLOBAL_AUDIT_STORE.unshift(newRecord);

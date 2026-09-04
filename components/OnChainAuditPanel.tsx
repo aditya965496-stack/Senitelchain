@@ -1,6 +1,6 @@
 import React from 'react';
 import { UserRole } from '@/lib/types';
-import { DEFAULT_CONTRACT_ADDRESS } from '@/lib/contract';
+import { LinkChainIcon, ExternalLinkIcon, CpuChipIcon, AlertCircleIcon, CheckCircleIcon } from './Icons';
 
 interface OnChainAuditPanelProps {
   contractAddress: string;
@@ -9,10 +9,12 @@ interface OnChainAuditPanelProps {
   isProcessing: boolean;
   isAuthenticated: boolean;
   userRole: UserRole;
+  walletAddress: string | null;
   onContractAddressChange: (addr: string) => void;
   onAssetIdChange: (cid: string) => void;
   onExecuteLiveTx: () => void;
-  onExecuteDemoTx: () => void;
+  onDeployContract?: () => void;
+  isDeploying?: boolean;
 }
 
 export const OnChainAuditPanel: React.FC<OnChainAuditPanelProps> = ({
@@ -22,56 +24,70 @@ export const OnChainAuditPanel: React.FC<OnChainAuditPanelProps> = ({
   isProcessing,
   isAuthenticated,
   userRole,
+  walletAddress,
   onContractAddressChange,
   onAssetIdChange,
   onExecuteLiveTx,
-  onExecuteDemoTx,
+  onDeployContract,
+  isDeploying = false,
 }) => {
   const isAuditor = userRole.includes('Auditor');
+  const isError = txStatus.toLowerCase().includes('error') || txStatus.toLowerCase().includes('revert') || txStatus.toLowerCase().includes('rejected');
+  const isSuccess = txStatus.toLowerCase().includes('success') || txStatus.toLowerCase().includes('confirmed');
 
   return (
-    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
+    <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] space-y-5">
+      {/* Header - Shopeers B2B Style */}
       <div>
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-slate-950 uppercase tracking-wider">
+          <h2 className="text-xs font-bold text-slate-950 uppercase tracking-wider">
             On-Chain Audit Execution
           </h2>
-          <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
+          <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200/80 px-2.5 py-0.5 rounded-full">
             Polygon Amoy (EVM)
           </span>
         </div>
         <p className="text-xs text-slate-500 mt-1">
-          Commit cryptographic access state to smart contract registry.
+          100% Real on-chain cryptographic access commit & NFT asset minting.
         </p>
       </div>
 
       <div className="space-y-4">
         {/* Smart Contract Registry Input */}
         <div>
-          <div className="flex justify-between items-center mb-1.5">
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider">
               Smart Contract Registry
             </label>
-            <button
-              type="button"
-              onClick={() => onContractAddressChange(DEFAULT_CONTRACT_ADDRESS)}
-              className="text-[11px] text-slate-600 hover:text-slate-950 underline font-medium cursor-pointer"
-            >
-              Use Default Registry
-            </button>
+            {onDeployContract && (
+              <button
+                type="button"
+                onClick={onDeployContract}
+                disabled={isDeploying || isProcessing || !isAuthenticated}
+                className="text-[11px] font-medium text-blue-600 hover:text-blue-800 underline disabled:opacity-40 cursor-pointer inline-flex items-center gap-1"
+                title="Deploy your own SentinelAuditRegistry.sol directly from your connected wallet"
+              >
+                <CpuChipIcon className="w-3 h-3" />
+                <span>{isDeploying ? 'Deploying...' : 'Deploy New Registry'}</span>
+              </button>
+            )}
           </div>
           <input
             type="text"
             value={contractAddress}
             onChange={(e) => onContractAddressChange(e.target.value)}
-            placeholder="0x..."
+            placeholder="0x... (Paste Deployed Sentinel Registry Address)"
             className="w-full px-3.5 py-2.5 text-xs font-mono border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all shadow-sm"
           />
+          <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+            Must be a deployed smart contract on Polygon Amoy. Note: A personal wallet address (e.g.{' '}
+            {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : '0x...'}) cannot be used as a contract.
+          </p>
         </div>
 
         {/* Asset Identifier Input */}
         <div>
-          <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+          <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
             Asset Identifier (CID Hash)
           </label>
           <input
@@ -83,11 +99,28 @@ export const OnChainAuditPanel: React.FC<OnChainAuditPanelProps> = ({
           />
         </div>
 
-        {/* Terminal Status Feedback Box */}
+        {/* Status Feedback Box */}
         {txStatus && (
-          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-mono text-slate-700 leading-relaxed break-all shadow-inner">
-            <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Execution Status</span>
-            {txStatus}
+          <div
+            className={`p-3.5 rounded-xl text-xs font-mono leading-relaxed break-all border transition-all ${
+              isError
+                ? 'bg-rose-50/80 border-rose-200 text-rose-800'
+                : isSuccess
+                ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                : 'bg-slate-50 border-slate-200 text-slate-700'
+            }`}
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              {isError ? (
+                <AlertCircleIcon className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+              ) : isSuccess ? (
+                <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              ) : null}
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                {isError ? 'Transaction Status / Error' : 'Blockchain Execution Status'}
+              </span>
+            </div>
+            <span>{txStatus}</span>
           </div>
         )}
 
@@ -95,43 +128,32 @@ export const OnChainAuditPanel: React.FC<OnChainAuditPanelProps> = ({
         <button
           onClick={onExecuteLiveTx}
           disabled={isProcessing || !isAuthenticated || isAuditor}
-          className="w-full py-3.5 px-4 bg-slate-950 hover:bg-slate-800 text-white rounded-2xl text-xs font-semibold tracking-wide uppercase disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+          className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold tracking-wide uppercase disabled:opacity-40 disabled:cursor-not-allowed shadow-sm hover:shadow active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer"
         >
-          <span>⛓️</span>
+          <LinkChainIcon className="w-3.5 h-3.5 text-slate-300" />
           <span>
             {isAuditor
               ? 'Auditor Mode (Read-Only)'
               : isProcessing
-              ? 'Broadcasting On-Chain...'
+              ? 'Broadcasting to Polygon Amoy...'
               : isAuthenticated
-              ? `Commit Log as ${userRole.split(' ')[0]}`
+              ? `Commit Log On-Chain as ${userRole.split(' ')[0]}`
               : 'Connect Wallet First'}
           </span>
         </button>
 
-        {/* Fast Demo Mode Button & Faucet Link */}
-        <div className="pt-2 border-t border-slate-100 flex flex-col gap-2.5">
-          <button
-            type="button"
-            onClick={onExecuteDemoTx}
-            disabled={isProcessing || isAuditor}
-            className="w-full py-3 px-3 bg-slate-100 hover:bg-slate-200 text-slate-900 rounded-2xl text-xs font-semibold transition-all disabled:opacity-40 flex items-center justify-center gap-2 border border-slate-200 shadow-sm cursor-pointer"
+        {/* Faucet Link & Network Info */}
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 px-0.5">
+          <span>Need testnet POL for gas?</span>
+          <a
+            href="https://faucet.polygon.technology/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-slate-900 font-semibold underline hover:text-slate-700 inline-flex items-center gap-1"
           >
-            <span>⚡</span>
-            <span>Fast Demo: Simulate On-Chain Commit</span>
-          </button>
-
-          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 px-1">
-            <span>Need Polygon Amoy POL?</span>
-            <a
-              href="https://faucet.polygon.technology/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-slate-900 font-semibold underline hover:text-slate-700 inline-flex items-center gap-0.5"
-            >
-              Claim Free POL ↗
-            </a>
-          </div>
+            <span>Claim Free POL</span>
+            <ExternalLinkIcon className="w-3 h-3" />
+          </a>
         </div>
       </div>
     </div>

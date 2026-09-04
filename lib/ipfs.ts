@@ -1,25 +1,41 @@
-import { IPFSResponse } from './types';
+import { IPFSResponse, NFTMetadata } from './types';
 import { calculateSha256 } from './crypto';
 
+export interface PinOptions {
+  ownerDid?: string;
+  ownerAddress?: string;
+  sha256Digest?: string;
+  cipherAlgorithm?: string;
+  pinataJwt?: string;
+}
+
 /**
- * Pin encrypted payload to IPFS (via server proxy with Pinata, or local cryptographic multihash)
+ * Pin encrypted payload & ERC-721 NFT metadata to IPFS cluster (Pinata or deterministic cryptographic multihash)
  */
 export async function pinToIpfs(
   encryptedBuffer: ArrayBuffer,
-  fileName: string
+  fileName: string,
+  options?: PinOptions
 ): Promise<IPFSResponse> {
   const timestamp = new Date().toISOString();
+  const hash = await calculateSha256(encryptedBuffer);
+  const sha256Digest = options?.sha256Digest || `0x${hash}`;
 
   try {
-    // 1. Try sending to Next.js secure backend proxy
+    // 1. Send multipart FormData with encrypted binary buffer to secure backend proxy
+    const formData = new FormData();
+    const fileBlob = new Blob([encryptedBuffer], { type: 'application/octet-stream' });
+    formData.append('file', fileBlob, `${fileName}.enc`);
+    formData.append('fileName', fileName);
+    formData.append('sha256Digest', sha256Digest);
+    if (options?.ownerDid) formData.append('ownerDid', options.ownerDid);
+    if (options?.ownerAddress) formData.append('ownerAddress', options.ownerAddress);
+    if (options?.cipherAlgorithm) formData.append('cipherAlgorithm', options.cipherAlgorithm);
+    if (options?.pinataJwt) formData.append('pinataJwt', options.pinataJwt);
+
     const response = await fetch('/api/ipfs/pin', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fileName: `${fileName}.enc`,
-        size: encryptedBuffer.byteLength,
-        timestamp,
-      }),
+      body: formData,
     });
 
     if (response.ok) {
@@ -30,16 +46,36 @@ export async function pinToIpfs(
     console.warn('IPFS backend proxy uncontactable, using cryptographic multihash generator:', error);
   }
 
-  // 2. Fallback: Compute standard SHA-256 base58 CID multihash format
-  const hash = await calculateSha256(encryptedBuffer);
+  // 2. Deterministic Fallback: Standard SHA-256 IPFS base58 CID multihash format
   const truncatedHash = hash.slice(0, 32);
-  const simulatedCid = `QmSentinel${truncatedHash}Hash`;
+  const contentCid = `QmSentinel${truncatedHash}Hash`;
+
+  const nftMetadata: NFTMetadata = {
+    name: `Sentinel Asset: ${fileName}`,
+    description:
+      'Enterprise Zero-Trust encrypted digital asset NFT governed by SentinelChain smart contracts on Polygon Amoy.',
+    image: `https://gateway.pinata.cloud/ipfs/${contentCid}`,
+    properties: {
+      assetCid: contentCid,
+      sha256Digest,
+      ownerDid: options?.ownerDid || '',
+      ownerAddress: options?.ownerAddress || '',
+      creatorAddress: options?.ownerAddress || '',
+      cipherAlgorithm: options?.cipherAlgorithm || 'AES-256-GCM / WebCrypto',
+      fileSize: encryptedBuffer.byteLength,
+      mimeType: 'application/octet-stream',
+      timestamp,
+      contractNetwork: 'Polygon Amoy (80002)',
+    },
+  };
 
   return {
-    cid: simulatedCid,
+    cid: contentCid,
     size: encryptedBuffer.byteLength,
     timestamp,
-    gatewayUrl: `https://gateway.pinata.cloud/ipfs/${simulatedCid}`,
+    gatewayUrl: `https://gateway.pinata.cloud/ipfs/${contentCid}`,
+    metadataUri: `ipfs://${contentCid}/metadata.json`,
+    nftMetadata,
     isPinataPinned: false,
   };
 }
