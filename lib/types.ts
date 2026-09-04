@@ -90,6 +90,16 @@ export interface DIDDocument {
   status: 'Active' | 'Revoked' | 'Suspended';
 }
 
+export interface StoredIdentity {
+  did: string;
+  address: string;
+  role: UserRole;
+  didDocument: DIDDocument;
+  registeredAt: string;
+  isActive: boolean;
+  isCryptographicallyVerified?: boolean;
+}
+
 export interface CryptographicProof {
   type: 'EcdsaSecp256k1RecoveryMethod2020';
   created: string;

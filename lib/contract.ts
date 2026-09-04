@@ -8,6 +8,35 @@ export const POLYGON_AMOY_CHAIN_ID_HEX = '0x13882';
 
 export const DEFAULT_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '';
 
+// Resilient Multi-RPC Fallback Cluster for Polygon Amoy
+export const POLYGON_AMOY_RPC_URLS = [
+  'https://polygon-amoy.drpc.org',
+  'https://rpc-amoy.polygon.technology/',
+  'https://polygon-amoy-bor-rpc.publicnode.com',
+];
+
+/**
+ * Get resilient read-only JsonRpcProvider with automatic fallback across multiple RPCs
+ */
+export async function getAmoyRpcProvider(): Promise<ethers.JsonRpcProvider> {
+  for (const rpcUrl of POLYGON_AMOY_RPC_URLS) {
+    try {
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const network = await Promise.race([
+        provider.getNetwork(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000)),
+      ]);
+      if (network && Number(network.chainId) === POLYGON_AMOY_CHAIN_ID) {
+        return provider;
+      }
+    } catch {
+      // Try next RPC in cluster
+    }
+  }
+  // Fallback to default
+  return new ethers.JsonRpcProvider(POLYGON_AMOY_RPC_URLS[0]);
+}
+
 // Role Keccak-256 Hashes
 export const ROLE_HASHES = {
   DEFAULT_ADMIN_ROLE: '0x0000000000000000000000000000000000000000000000000000000000000000',
@@ -166,7 +195,7 @@ export async function executeContractAccessLog(
 
   const contract = new ethers.Contract(validAddress, CONTRACT_ABI, signer);
   const cleanAssetId = assetId.trim();
-  const digest = options?.sha256Digest || '0x' + Array.from({ length: 32 }, () => 'f').join('');
+  const digest = options?.sha256Digest || ('0x' + 'f'.repeat(64));
 
   let tx: any;
   let actionType: TxExecutionResult['actionType'] = 'Access Verified';
@@ -247,5 +276,179 @@ export async function executeContractAccessLog(
     actionType,
     tokenId: mintedTokenId,
     did,
+  };
+}
+
+export interface ContractSystemStats {
+  contractAddress: string;
+  name: string;
+  symbol: string;
+  isPaused: boolean;
+  totalAssetsMinted: number;
+  totalIdentities: number;
+  totalAccessLogs: number;
+  isAvailable: boolean;
+}
+
+/**
+ * Fetch live system telemetry and on-chain counters from deployed contract
+ */
+export async function getContractSystemStats(contractAddress: string): Promise<ContractSystemStats | null> {
+  if (!contractAddress || !contractAddress.startsWith('0x') || contractAddress.length !== 42) {
+    return null;
+  }
+
+  try {
+    const validAddr = normalizeAddress(contractAddress);
+    const provider = await getAmoyRpcProvider();
+    
+    // Check bytecode
+    const code = await provider.getCode(validAddr);
+    if (!code || code === '0x') {
+      return null;
+    }
+
+    const contract = new ethers.Contract(validAddr, CONTRACT_ABI, provider);
+
+    const [name, symbol, paused, minted, identities, logs] = await Promise.allSettled([
+      contract.name(),
+      contract.symbol(),
+      contract.paused(),
+      contract.totalAssetsMinted(),
+      contract.totalIdentities(),
+      contract.totalAccessLogs(),
+    ]);
+
+    return {
+      contractAddress: validAddr,
+      name: name.status === 'fulfilled' ? name.value : 'Sentinel Asset NFT',
+      symbol: symbol.status === 'fulfilled' ? symbol.value : 'SENTINEL',
+      isPaused: paused.status === 'fulfilled' ? Boolean(paused.value) : false,
+      totalAssetsMinted: minted.status === 'fulfilled' ? Number(minted.value) : 0,
+      totalIdentities: identities.status === 'fulfilled' ? Number(identities.value) : 0,
+      totalAccessLogs: logs.status === 'fulfilled' ? Number(logs.value) : 0,
+      isAvailable: true,
+    };
+  } catch (error) {
+    console.warn('Could not query contract system stats:', error);
+    return null;
+  }
+}
+
+/**
+ * Check and verify user's real smart contract role on-chain
+ */
+export async function verifyUserRoleOnChain(
+  contractAddress: string,
+  userAddress: string
+): Promise<{ role: string; hasAdminRole: boolean; hasManagerRole: boolean; isActive: boolean }> {
+  const defaultRes = { role: 'User (Asset Owner)', hasAdminRole: false, hasManagerRole: false, isActive: true };
+  if (!contractAddress || !userAddress || !userAddress.startsWith('0x')) {
+    return defaultRes;
+  }
+
+  try {
+    const validContract = normalizeAddress(contractAddress);
+    const validUser = normalizeAddress(userAddress);
+    const provider = await getAmoyRpcProvider();
+    const contract = new ethers.Contract(validContract, CONTRACT_ABI, provider);
+
+    const [isAdmin, isManager, isAuditor] = await Promise.all([
+      contract.hasRole(ROLE_HASHES.ADMIN_ROLE, validUser).catch(() => false),
+      contract.hasRole(ROLE_HASHES.MANAGER_ROLE, validUser).catch(() => false),
+      contract.hasRole(ROLE_HASHES.AUDITOR_ROLE, validUser).catch(() => false),
+    ]);
+
+    let resolvedRole = 'User (Asset Owner)';
+    if (isAdmin) resolvedRole = 'Admin (Issuer)';
+    else if (isManager) resolvedRole = 'Manager (Asset Manager)';
+    else if (isAuditor) resolvedRole = 'Auditor (Viewer - Read Only)';
+
+    let isActive = true;
+    try {
+      const identity = await contract.getIdentity(validUser);
+      if (identity && identity.wallet !== ethers.ZeroAddress) {
+        isActive = identity.isActive;
+      }
+    } catch {}
+
+    return {
+      role: resolvedRole,
+      hasAdminRole: isAdmin,
+      hasManagerRole: isManager,
+      isActive,
+    };
+  } catch {
+    return defaultRes;
+  }
+}
+
+/**
+ * Reallocate / Transfer an Asset NFT directly on-chain to another DID and wallet
+ */
+export async function reallocateAssetNFTOnChain(
+  contractAddress: string,
+  tokenId: number,
+  newOwnerAddress: string,
+  newOwnerDid?: string
+): Promise<TxExecutionResult> {
+  if (typeof window === 'undefined' || !(window as any).ethereum) {
+    throw new Error('MetaMask or Web3 Provider is not detected.');
+  }
+
+  const validContract = normalizeAddress(contractAddress);
+  const validNewOwner = normalizeAddress(newOwnerAddress);
+  const targetDid = newOwnerDid || generateDID(validNewOwner);
+
+  await switchOrAddPolygonAmoy();
+  const provider = new ethers.BrowserProvider((window as any).ethereum);
+  const signer = await provider.getSigner();
+  const contract = new ethers.Contract(validContract, CONTRACT_ABI, signer);
+
+  const tx = await contract.allocateAssetNFT(tokenId, validNewOwner, targetDid);
+  const receipt = await tx.wait();
+
+  if (!receipt || receipt.status !== 1) {
+    throw new Error('Asset reallocation transaction was reverted on Polygon Amoy.');
+  }
+
+  return {
+    success: true,
+    txHash: receipt.hash,
+    blockNumber: receipt.blockNumber,
+    gasUsed: `${Number(receipt.gasUsed).toLocaleString()} gas units`,
+    actionType: 'Asset Allocated',
+    tokenId,
+    did: targetDid,
+  };
+}
+
+/**
+ * Toggle contract Emergency Pause / Circuit Breaker (Admin only)
+ */
+export async function toggleContractCircuitBreaker(
+  contractAddress: string,
+  pauseState: boolean
+): Promise<{ txHash: string; isPaused: boolean }> {
+  if (typeof window === 'undefined' || !(window as any).ethereum) {
+    throw new Error('MetaMask or Web3 Provider is not detected.');
+  }
+
+  const validContract = normalizeAddress(contractAddress);
+  await switchOrAddPolygonAmoy();
+  const provider = new ethers.BrowserProvider((window as any).ethereum);
+  const signer = await provider.getSigner();
+  const contract = new ethers.Contract(validContract, CONTRACT_ABI, signer);
+
+  const tx = await contract.setPaused(pauseState);
+  const receipt = await tx.wait();
+
+  if (!receipt || receipt.status !== 1) {
+    throw new Error('Circuit breaker transaction reverted.');
+  }
+
+  return {
+    txHash: receipt.hash,
+    isPaused: pauseState,
   };
 }

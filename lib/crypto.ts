@@ -22,11 +22,32 @@ export function hexToBuffer(hex: string): Uint8Array {
   return bytes;
 }
 
+function getSubtleCrypto(): SubtleCrypto {
+  if (typeof window !== 'undefined' && window.crypto?.subtle) {
+    return window.crypto.subtle;
+  }
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.subtle) {
+    return globalThis.crypto.subtle;
+  }
+  throw new Error('Web Crypto API (SubtleCrypto) is not available in this environment.');
+}
+
+export function getRandomValues(array: Uint8Array): Uint8Array {
+  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+    return window.crypto.getRandomValues(array);
+  }
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
+    return globalThis.crypto.getRandomValues(array);
+  }
+  throw new Error('Web Crypto API (getRandomValues) is not available in this environment.');
+}
+
 /**
  * Calculate cryptographic SHA-256 digest of an ArrayBuffer
  */
 export async function calculateSha256(data: ArrayBuffer): Promise<string> {
-  const digest = await window.crypto.subtle.digest('SHA-256', data);
+  const subtle = getSubtleCrypto();
+  const digest = await subtle.digest('SHA-256', data);
   return bufferToHex(digest);
 }
 
@@ -41,17 +62,18 @@ export async function encryptFilePayload(file: File): Promise<EncryptedPayload> 
   const sha256Hash = await calculateSha256(fileBuffer);
 
   // 2. Generate 256-bit AES-GCM Key
-  const cryptoKey = await window.crypto.subtle.generateKey(
+  const subtle = getSubtleCrypto();
+  const cryptoKey = await subtle.generateKey(
     { name: 'AES-GCM', length: 256 },
     true,
     ['encrypt', 'decrypt']
   );
 
   // 3. Generate 96-bit random IV (NIST recommendation for GCM)
-  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const iv = getRandomValues(new Uint8Array(12));
 
   // 4. Execute authenticated client-side encryption
-  const encryptedBuffer = await window.crypto.subtle.encrypt(
+  const encryptedBuffer = await subtle.encrypt(
     { name: 'AES-GCM', iv },
     cryptoKey,
     fileBuffer
@@ -97,7 +119,8 @@ export async function decryptPayload(
   mimeType: string = 'application/octet-stream'
 ): Promise<DecryptionVerification> {
   try {
-    const decryptedBuffer = await window.crypto.subtle.decrypt(
+    const subtle = getSubtleCrypto();
+    const decryptedBuffer = await subtle.decrypt(
       { name: 'AES-GCM', iv },
       cryptoKey,
       encryptedBuffer
@@ -105,9 +128,12 @@ export async function decryptPayload(
 
     const sha256Hash = await calculateSha256(decryptedBuffer);
 
-    // Create a downloadable Blob URL
-    const blob = new Blob([decryptedBuffer], { type: mimeType });
-    const decryptedBlobUrl = URL.createObjectURL(blob);
+    // Create a downloadable Blob URL if in browser environment
+    let decryptedBlobUrl = '';
+    if (typeof window !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+      const blob = new Blob([decryptedBuffer], { type: mimeType });
+      decryptedBlobUrl = URL.createObjectURL(blob);
+    }
 
     let textPreview = '';
     let isText = false;
@@ -143,5 +169,6 @@ export async function decryptPayload(
  * Export CryptoKey to JSON Web Key (JWK) for secure envelope transfer
  */
 export async function exportKeyToJwk(key: CryptoKey): Promise<JsonWebKey> {
-  return await window.crypto.subtle.exportKey('jwk', key);
+  const subtle = getSubtleCrypto();
+  return await subtle.exportKey('jwk', key);
 }

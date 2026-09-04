@@ -73,13 +73,28 @@ export function createDIDDocument(
 }
 
 /**
+ * Generate cryptographically secure nonce for authentication challenges
+ */
+export function generateSecureNonce(): string {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+}
+
+/**
  * Create a cryptographic authentication challenge for wallet signing
  */
 export function createAuthChallenge(
   address: string,
   did: string,
   role: UserRole,
-  nonce: string = Math.random().toString(36).substring(2, 15)
+  nonce: string = generateSecureNonce()
 ): string {
   const timestamp = new Date().toISOString();
   return [

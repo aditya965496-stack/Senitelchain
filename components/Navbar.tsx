@@ -11,6 +11,7 @@ interface NavbarProps {
   onConnect: () => void;
   onDisconnect: () => void;
   onSwitchNetwork: () => void;
+  onOpenDIDModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -22,6 +23,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onConnect,
   onDisconnect,
   onSwitchNetwork,
+  onOpenDIDModal,
 }) => {
   const formatAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
@@ -71,6 +73,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {userRole.split(' ')[0]}
               </span>
             </span>
+
+            {onOpenDIDModal && (
+              <button
+                onClick={onOpenDIDModal}
+                title="Inspect W3C DID Document & Credential Proofs"
+                className="text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200/90 px-3 py-2 rounded-xl transition-all shadow-sm cursor-pointer"
+              >
+                DID Doc
+              </button>
+            )}
+
             <button
               onClick={onDisconnect}
               className="text-xs font-medium text-slate-600 hover:text-red-600 bg-white hover:bg-red-50 border border-slate-200/90 px-3 py-2 rounded-xl transition-all shadow-sm cursor-pointer"

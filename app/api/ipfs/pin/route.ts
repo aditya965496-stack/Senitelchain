@@ -20,6 +20,12 @@ export async function POST(request: Request) {
       if (fileEntry && typeof fileEntry === 'object' && 'arrayBuffer' in fileEntry) {
         fileBlob = fileEntry as Blob;
         size = fileBlob.size;
+        if (size > 50 * 1024 * 1024) {
+          return NextResponse.json(
+            { success: false, error: 'Payload exceeds maximum allowable file size (50 MB).' },
+            { status: 413 }
+          );
+        }
       }
       fileName = (formData.get('fileName') as string) || fileName;
       sha256Digest = (formData.get('sha256Digest') as string) || '';
@@ -31,6 +37,12 @@ export async function POST(request: Request) {
       const body = await request.json();
       fileName = body.fileName || fileName;
       size = body.size || size;
+      if (size > 50 * 1024 * 1024) {
+        return NextResponse.json(
+          { success: false, error: 'Payload exceeds maximum allowable size (50 MB).' },
+          { status: 413 }
+        );
+      }
       timestamp = body.timestamp || timestamp;
       sha256Digest = body.sha256Digest || '';
       ownerDid = body.ownerDid || '';
@@ -131,12 +143,11 @@ export async function POST(request: Request) {
       }
     }
 
-    // 2. Fallback: Deterministic cryptographic multihash if Pinata is not configured or fails
+    // 2. Fallback: Deterministic content-addressed cryptographic multihash if Pinata is not configured or fails
     if (!cid) {
-      const mockHash = Array.from({ length: 16 }, () =>
-        Math.floor(Math.random() * 256).toString(16).padStart(2, '0')
-      ).join('');
-      cid = `bafybeih${mockHash}sentinel`;
+      const cleanHash = (sha256Digest.startsWith('0x') ? sha256Digest.slice(2) : sha256Digest).toLowerCase();
+      const contentHash = cleanHash.length >= 32 ? cleanHash.slice(0, 32) : '0'.repeat(32);
+      cid = `bafybeih${contentHash}sentinel`;
     }
 
     const nftMetadata: NFTMetadata = {

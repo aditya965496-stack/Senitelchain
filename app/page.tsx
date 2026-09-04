@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 import {
   UserRole,
@@ -9,6 +9,7 @@ import {
   AuditRecord,
   TelemetryStats,
   DIDDocument,
+  AssetNFT,
 } from '@/lib/types';
 import { encryptFilePayload, decryptPayload, DecryptionVerification } from '@/lib/crypto';
 import { pinToIpfs } from '@/lib/ipfs';
@@ -24,6 +25,11 @@ import {
   switchOrAddPolygonAmoy,
   executeContractAccessLog,
   deploySentinelRegistry,
+  getContractSystemStats,
+  verifyUserRoleOnChain,
+  reallocateAssetNFTOnChain,
+  toggleContractCircuitBreaker,
+  ContractSystemStats,
 } from '@/lib/contract';
 import { Navbar } from '@/components/Navbar';
 import { PipelineStepper } from '@/components/PipelineStepper';
@@ -31,6 +37,9 @@ import { IngestionGateway } from '@/components/IngestionGateway';
 import { OnChainAuditPanel } from '@/components/OnChainAuditPanel';
 import { AuditLedgerTable } from '@/components/AuditLedgerTable';
 import { TelemetryMetrics } from '@/components/TelemetryMetrics';
+import { NFTAssetGallery } from '@/components/NFTAssetGallery';
+import { ContractStatusBanner } from '@/components/ContractStatusBanner';
+import { DIDDocumentModal } from '@/components/DIDDocumentModal';
 import { AlertCircleIcon } from '@/components/Icons';
 
 const PIPELINE_NODES: NodeItem[] = [
@@ -76,19 +85,26 @@ export default function Home() {
   const [didDocument, setDidDocument] = useState<DIDDocument | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<UserRole>('Admin (Issuer)');
+  const [verifiedOnChainRole, setVerifiedOnChainRole] = useState<string>('');
+  const [isDIDModalOpen, setIsDIDModalOpen] = useState<boolean>(false);
 
   // Contract & Asset State
   const [contractAddress, setContractAddress] = useState<string>(DEFAULT_CONTRACT_ADDRESS);
+  const [contractStats, setContractStats] = useState<ContractSystemStats | null>(null);
+  const [isStatsLoading, setIsStatsLoading] = useState<boolean>(false);
   const [assetId, setAssetId] = useState<string>('');
   const [txStatus, setTxStatus] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isDeploying, setIsDeploying] = useState<boolean>(false);
 
   // File & Cryptographic State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [encryptedPayload, setEncryptedPayload] = useState<EncryptedPayload | null>(null);
   const [pinnedCid, setPinnedCid] = useState<string>('');
   const [decryptedResult, setDecryptedResult] = useState<DecryptionVerification | null>(null);
-  const [isDeploying, setIsDeploying] = useState<boolean>(false);
+
+  // Digital Asset NFT Inventory State
+  const [nfts, setNfts] = useState<AssetNFT[]>([]);
 
   // Telemetry Metrics State
   const [telemetry, setTelemetry] = useState<TelemetryStats>({
@@ -103,16 +119,59 @@ export default function Home() {
   // Audit Logs State
   const [auditLogs, setAuditLogs] = useState<AuditRecord[]>([]);
 
-  // Load audit logs on start
-  useEffect(() => {
-    fetch('/api/audit')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.records) setAuditLogs(data.records);
-      })
-      .catch(console.error);
+  // Load audit logs from persistent API
+  const fetchAuditLogs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/audit');
+      const data = await res.json();
+      if (data.records) setAuditLogs(data.records);
+    } catch (err) {
+      console.error('Failed to load audit logs:', err);
+    }
+  }, []);
 
-    // Detect existing wallet connection
+  // Load NFTs from persistent API
+  const fetchNFTs = useCallback(async () => {
+    try {
+      const res = await fetch('/api/nft');
+      const data = await res.json();
+      if (data.tokens) setNfts(data.tokens);
+    } catch (err) {
+      console.error('Failed to load NFTs:', err);
+    }
+  }, []);
+
+  // Fetch live contract stats from Polygon Amoy
+  const fetchContractStats = useCallback(async () => {
+    if (!contractAddress || !contractAddress.startsWith('0x') || contractAddress.length !== 42) {
+      setContractStats(null);
+      return;
+    }
+
+    setIsStatsLoading(true);
+    try {
+      const stats = await getContractSystemStats(contractAddress);
+      setContractStats(stats);
+
+      if (walletAddress) {
+        const onChainInfo = await verifyUserRoleOnChain(contractAddress, walletAddress);
+        if (onChainInfo.role && onChainInfo.role !== 'User (Asset Owner)') {
+          setVerifiedOnChainRole(onChainInfo.role);
+        }
+      }
+    } catch (err) {
+      console.warn('Could not query contract stats:', err);
+    } finally {
+      setIsStatsLoading(false);
+    }
+  }, [contractAddress, walletAddress]);
+
+  // Initial load
+  useEffect(() => {
+    fetchAuditLogs();
+    fetchNFTs();
+
+    // Check existing wallet connection
     if (typeof window !== 'undefined' && (window as any).ethereum) {
       const eth = (window as any).ethereum;
       eth
@@ -128,7 +187,12 @@ export default function Home() {
         })
         .catch(console.error);
     }
-  }, [userRole]);
+  }, [fetchAuditLogs, fetchNFTs, userRole]);
+
+  // Query contract stats on contractAddress change
+  useEffect(() => {
+    fetchContractStats();
+  }, [contractAddress, fetchContractStats]);
 
   // Connect Web3 Wallet & Establish Cryptographic DID Session
   const handleConnectWallet = async () => {
@@ -166,7 +230,7 @@ export default function Home() {
           throw new Error('Cryptographic signature verification failed.');
         }
 
-        // Register identity with local backend DID registry
+        // Register identity with persistent backend DID registry
         try {
           await fetch('/api/did', {
             method: 'POST',
@@ -186,6 +250,11 @@ export default function Home() {
         setTxStatus(
           `Authenticated successfully. Decentralized Identity [${formatDID(did)}] verified for [${userRole}].`
         );
+
+        // Check on-chain role if contract is set
+        if (contractAddress) {
+          fetchContractStats();
+        }
       } catch (signErr: any) {
         if (signErr?.code === 'ACTION_REJECTED' || signErr?.code === 4001) {
           setTxStatus('Signature rejected by user. Authentication aborted.');
@@ -210,6 +279,7 @@ export default function Home() {
     setUserDID('');
     setDidDocument(null);
     setIsAuthenticated(false);
+    setVerifiedOnChainRole('');
     setTxStatus('Secure session terminated. Local cryptographic context purged.');
   };
 
@@ -306,7 +376,7 @@ export default function Home() {
       const clusterNotice = ipfsRes.isPinataPinned ? ' [Pinned to Pinata IPFS Cluster]' : '';
       setTxStatus(`Storage synchronization successful under [${userRole}]. IPFS CID: ${ipfsRes.cid}${clusterNotice}`);
     } catch (err: any) {
-      setTxStatus('IPFS pinning completed with local cryptographic multihash CID.');
+      setTxStatus('IPFS pinning completed with deterministic content-addressed multihash CID.');
     } finally {
       setIsProcessing(false);
     }
@@ -342,13 +412,13 @@ export default function Home() {
       }
 
       if (!contractAddress || !contractAddress.startsWith('0x')) {
-        setTxStatus('Error: Please specify a deployed smart contract address (e.g. from SentinelAuditRegistry.sol) or click "Deploy New Registry".');
+        setTxStatus('Error: Please specify a deployed smart contract address or click "Deploy New Registry".');
         setIsProcessing(false);
         return;
       }
 
       if (contractAddress.toLowerCase() === walletAddress.toLowerCase()) {
-        setTxStatus('Error: The contract address cannot be your personal wallet address (EOA). A contract address must be a deployed smart contract on Polygon Amoy. Click "Deploy New Registry" to launch your own contract directly.');
+        setTxStatus('Error: The contract address cannot be your personal wallet address (EOA). Please enter your deployed SentinelAuditRegistry contract or click "Deploy New Registry".');
         setIsProcessing(false);
         return;
       }
@@ -394,8 +464,8 @@ export default function Home() {
 
       await recordAuditLog(newRecord);
 
-      // Record NFT to registry store if minted
-      if (result.actionType === 'NFT Minted') {
+      // Record NFT to persistent registry store if minted
+      if (result.actionType === 'NFT Minted' && result.tokenId) {
         try {
           await fetch('/api/nft', {
             method: 'POST',
@@ -408,13 +478,16 @@ export default function Home() {
               tokenId: result.tokenId,
             }),
           });
+          fetchNFTs();
         } catch {}
       }
+
+      fetchContractStats();
     } catch (err: any) {
       console.error('Contract execution error:', err);
       const errMsg = err?.message || '';
       if (errMsg.includes('INSUFFICIENT_FUNDS')) {
-        setTxStatus('Error: Insufficient POL testnet balance. Real on-chain transactions require Polygon Amoy POL to pay for gas fees. Please claim free POL from the faucet link below.');
+        setTxStatus('Error: Insufficient POL testnet balance. Real on-chain transactions require Polygon Amoy POL to pay for gas fees. Claim free POL from the faucet link below.');
       } else if (err?.code === 'ACTION_REJECTED' || err?.code === 4001) {
         setTxStatus('Transaction was cancelled or rejected in your wallet.');
       } else if (errMsg.includes('No smart contract found')) {
@@ -432,6 +505,70 @@ export default function Home() {
     }
   };
 
+  // Reallocate NFT Asset to a target DID on-chain
+  const handleReallocateAsset = async (tokenId: number, newOwner: string, targetDid: string) => {
+    setIsProcessing(true);
+    try {
+      setTxStatus(`Reallocating Asset NFT #${tokenId} on-chain to ${newOwner.slice(0, 8)}...`);
+      const result = await reallocateAssetNFTOnChain(contractAddress, tokenId, newOwner, targetDid);
+
+      // Update backend persistent state
+      await fetch('/api/nft', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tokenId,
+          newOwner,
+          newOwnerDid: targetDid,
+        }),
+      });
+
+      // Record audit log
+      const record: AuditRecord = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
+        assetCid: nfts.find((n) => n.tokenId === tokenId)?.assetCid || 'unknown',
+        userAddress: `${walletAddress?.slice(0, 6)}...${walletAddress?.slice(-4)}`,
+        role: userRole,
+        txHash: result.txHash,
+        gasUsed: result.gasUsed,
+        blockNumber: result.blockNumber,
+        status: 'Verified',
+        actionType: 'Asset Allocated',
+        tokenId,
+        did: targetDid,
+      };
+      await recordAuditLog(record);
+
+      setTxStatus(`Asset NFT #${tokenId} successfully reallocated to ${newOwner.slice(0, 8)}... Tx: ${result.txHash.slice(0, 16)}...`);
+      fetchNFTs();
+      fetchContractStats();
+    } catch (err: any) {
+      console.error('Reallocation error:', err);
+      setTxStatus(`Reallocation failed: ${err.message || 'Transaction reverted'}`);
+      throw err;
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Toggle Circuit Breaker on Contract (Admin only)
+  const handleTogglePause = async () => {
+    if (!contractStats) return;
+    setIsProcessing(true);
+    try {
+      const nextState = !contractStats.isPaused;
+      setTxStatus(`${nextState ? 'Pausing' : 'Unpausing'} smart contract on Polygon Amoy...`);
+      const res = await toggleContractCircuitBreaker(contractAddress, nextState);
+      setTxStatus(`Circuit breaker toggled. Contract paused: ${res.isPaused}. Tx: ${res.txHash.slice(0, 16)}...`);
+      fetchContractStats();
+    } catch (err: any) {
+      setTxStatus(`Circuit breaker toggle failed: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // Deploy Live Contract directly to Polygon Amoy via MetaMask
   const handleDeployContract = async () => {
     if (!walletAddress || !isAuthenticated) {
@@ -444,11 +581,12 @@ export default function Home() {
       const result = await deploySentinelRegistry();
       setContractAddress(result.address);
       setTxStatus(`Success: SentinelAuditRegistry deployed to Polygon Amoy! Contract Address: ${result.address}. Deployment Tx: ${result.txHash.slice(0, 18)}...`);
+      fetchContractStats();
     } catch (err: any) {
       console.error('Deployment error:', err);
       const errMsg = err?.message || '';
       if (errMsg.includes('INSUFFICIENT_FUNDS')) {
-        setTxStatus('Error: Insufficient POL testnet balance to deploy contract. Please claim free testnet POL from the faucet link below.');
+        setTxStatus('Error: Insufficient POL testnet balance to deploy contract. Claim free testnet POL from the faucet link below.');
       } else if (err?.code === 'ACTION_REJECTED' || err?.code === 4001) {
         setTxStatus('Deployment transaction was cancelled in your wallet.');
       } else {
@@ -460,6 +598,7 @@ export default function Home() {
   };
 
   const isAuditor = userRole.includes('Auditor');
+  const isAdmin = userRole.includes('Admin');
 
   return (
     <main className="min-h-screen bg-[#F8F9FB] text-slate-900 font-sans p-4 sm:p-8 md:p-10">
@@ -475,6 +614,19 @@ export default function Home() {
           onConnect={handleConnectWallet}
           onDisconnect={handleDisconnect}
           onSwitchNetwork={switchOrAddPolygonAmoy}
+          onOpenDIDModal={() => setIsDIDModalOpen(true)}
+        />
+
+        {/* Live Contract Status Banner */}
+        <ContractStatusBanner
+          stats={contractStats}
+          contractAddress={contractAddress}
+          userRole={userRole}
+          verifiedOnChainRole={verifiedOnChainRole}
+          isLoading={isStatsLoading}
+          onRefresh={fetchContractStats}
+          onTogglePause={handleTogglePause}
+          isAdmin={isAdmin}
         />
 
         {/* Auditor Restriction Notice */}
@@ -539,6 +691,18 @@ export default function Home() {
             />
           </div>
 
+          {/* Digital Asset NFT Inventory & Allocation Console */}
+          <div className="lg:col-span-12">
+            <NFTAssetGallery
+              nfts={nfts}
+              currentAddress={walletAddress}
+              userRole={userRole}
+              isProcessing={isProcessing}
+              onReallocateAsset={handleReallocateAsset}
+              onRefresh={fetchNFTs}
+            />
+          </div>
+
           {/* System Performance & Ledger Telemetry Panel */}
           <div className="lg:col-span-12">
             <TelemetryMetrics telemetry={telemetry} />
@@ -551,6 +715,13 @@ export default function Home() {
 
         </div>
       </div>
+
+      {/* W3C DID Document Modal */}
+      <DIDDocumentModal
+        isOpen={isDIDModalOpen}
+        didDocument={didDocument}
+        onClose={() => setIsDIDModalOpen(false)}
+      />
     </main>
   );
 }
