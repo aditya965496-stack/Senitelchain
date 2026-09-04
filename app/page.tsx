@@ -17,6 +17,7 @@ import {
   generateDID,
   createDIDDocument,
   createAuthChallenge,
+  createEIP712AuthData,
   verifyDIDSignature,
   formatDID,
 } from '@/lib/did';
@@ -31,6 +32,7 @@ import {
   toggleContractCircuitBreaker,
   ContractSystemStats,
 } from '@/lib/contract';
+import { SupportedWalletId, getWalletProvider } from '@/lib/wallets';
 import { Navbar } from '@/components/Navbar';
 import { PipelineStepper } from '@/components/PipelineStepper';
 import { IngestionGateway } from '@/components/IngestionGateway';
@@ -38,8 +40,8 @@ import { OnChainAuditPanel } from '@/components/OnChainAuditPanel';
 import { AuditLedgerTable } from '@/components/AuditLedgerTable';
 import { TelemetryMetrics } from '@/components/TelemetryMetrics';
 import { NFTAssetGallery } from '@/components/NFTAssetGallery';
-import { ContractStatusBanner } from '@/components/ContractStatusBanner';
 import { DIDDocumentModal } from '@/components/DIDDocumentModal';
+import { WalletSelectModal } from '@/components/WalletSelectModal';
 import { AlertCircleIcon } from '@/components/Icons';
 
 const PIPELINE_NODES: NodeItem[] = [
@@ -87,6 +89,9 @@ export default function Home() {
   const [userRole, setUserRole] = useState<UserRole>('Admin (Issuer)');
   const [verifiedOnChainRole, setVerifiedOnChainRole] = useState<string>('');
   const [isDIDModalOpen, setIsDIDModalOpen] = useState<boolean>(false);
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState<boolean>(false);
+  const [connectedWalletType, setConnectedWalletType] = useState<string>('');
+  const [activeWalletProvider, setActiveWalletProvider] = useState<any>(null);
 
   // Contract & Asset State
   const [contractAddress, setContractAddress] = useState<string>(DEFAULT_CONTRACT_ADDRESS);
@@ -194,22 +199,35 @@ export default function Home() {
     fetchContractStats();
   }, [contractAddress, fetchContractStats]);
 
-  // Connect Web3 Wallet & Establish Cryptographic DID Session
-  const handleConnectWallet = async () => {
+  // Connect via Multi-Wallet Selector (MetaMask, Rabby, Trust Wallet) with EIP-712 Typed Signing
+  const handleConnectWithWallet = async (walletId: SupportedWalletId = 'metamask') => {
+    setIsWalletModalOpen(false);
     setIsProcessing(true);
+
+    const walletLabels: Record<SupportedWalletId, string> = {
+      metamask: 'MetaMask',
+      rabby: 'Rabby Wallet',
+      trust: 'Trust Wallet',
+    };
+    const walletLabel = walletLabels[walletId] || 'MetaMask';
+    setConnectedWalletType(walletLabel);
+
     try {
-      if (typeof window === 'undefined' || !(window as any).ethereum) {
-        setTxStatus('No Web3 wallet detected. Please install MetaMask or another Web3 browser extension.');
+      const selectedProvider = getWalletProvider(walletId);
+      if (!selectedProvider) {
+        setTxStatus(`No ${walletLabel} extension detected. Please install it or select an active wallet.`);
+        setIsProcessing(false);
         return;
       }
+      setActiveWalletProvider(selectedProvider);
 
-      setTxStatus(`Requesting wallet authorization for [${userRole}] on Polygon Amoy...`);
-      await switchOrAddPolygonAmoy();
+      setTxStatus(`Requesting wallet authorization via ${walletLabel} on Polygon Amoy...`);
+      await switchOrAddPolygonAmoy(selectedProvider);
 
-      const provider = new ethers.BrowserProvider((window as any).ethereum);
-      const accounts = await provider.send('eth_requestAccounts', []);
+      const browserProvider = new ethers.BrowserProvider(selectedProvider);
+      const accounts = await browserProvider.send('eth_requestAccounts', []);
 
-      if (!accounts || accounts.length === 0) throw new Error('No accounts found');
+      if (!accounts || accounts.length === 0) throw new Error('No accounts found in wallet');
       const address = accounts[0];
       setWalletAddress(address);
 
@@ -219,13 +237,29 @@ export default function Home() {
       const didDoc = createDIDDocument(address, userRole);
       setDidDocument(didDoc);
 
-      const signer = await provider.getSigner();
-      const challenge = createAuthChallenge(address, did, userRole);
+      const signer = await browserProvider.getSigner();
+
+      // Zero-Warning Cryptographic Authentication via EIP-712 Typed Structured Data
+      const authData = createEIP712AuthData(address, did, userRole);
+      setTxStatus(`Please sign cryptographic proof in ${walletLabel}...`);
 
       try {
-        const signature = await signer.signMessage(challenge);
-        const isValid = verifyDIDSignature(challenge, signature, address);
+        let signature: string;
+        try {
+          // Standard EIP-712 typed signing (Zero-warning in MetaMask, Rabby, and Trust Wallet)
+          signature = await signer.signTypedData(
+            authData.domain,
+            authData.types,
+            authData.message
+          );
+        } catch (typedErr: any) {
+          // Graceful fallback to personal_sign if an older wallet extension does not implement signTypedData
+          console.warn('EIP-712 typed data signing fallback to personal_sign:', typedErr);
+          const fallbackChallenge = createAuthChallenge(address, did, userRole);
+          signature = await signer.signMessage(fallbackChallenge);
+        }
 
+        const isValid = verifyDIDSignature(authData, signature, address);
         if (!isValid) {
           throw new Error('Cryptographic signature verification failed.');
         }
@@ -238,7 +272,7 @@ export default function Home() {
             body: JSON.stringify({
               address,
               role: userRole,
-              challenge,
+              challenge: JSON.stringify(authData),
               signature,
             }),
           });
@@ -248,18 +282,17 @@ export default function Home() {
 
         setIsAuthenticated(true);
         setTxStatus(
-          `Authenticated successfully. Decentralized Identity [${formatDID(did)}] verified for [${userRole}].`
+          `Authenticated successfully via ${walletLabel}. Decentralized Identity [${formatDID(did)}] verified for [${userRole}].`
         );
 
-        // Check on-chain role if contract is set
         if (contractAddress) {
           fetchContractStats();
         }
       } catch (signErr: any) {
         if (signErr?.code === 'ACTION_REJECTED' || signErr?.code === 4001) {
-          setTxStatus('Signature rejected by user. Authentication aborted.');
+          setTxStatus('Signature request rejected by user. Authentication aborted.');
         } else {
-          setTxStatus(`Signature failed: ${signErr?.message || 'Unknown error'}`);
+          setTxStatus(`Signature failed: ${signErr?.message || 'Unknown signature error'}`);
         }
       }
     } catch (err: any) {
@@ -272,6 +305,10 @@ export default function Home() {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleConnectWallet = () => {
+    setIsWalletModalOpen(true);
   };
 
   const handleDisconnect = () => {
@@ -433,6 +470,7 @@ export default function Home() {
       const result = await executeContractAccessLog(contractAddress, assetId, userRole, {
         sha256Digest: encryptedPayload?.sha256Hash,
         targetAddress: walletAddress,
+        customProvider: activeWalletProvider,
       });
 
       setTelemetry((prev) => ({
@@ -510,7 +548,13 @@ export default function Home() {
     setIsProcessing(true);
     try {
       setTxStatus(`Reallocating Asset NFT #${tokenId} on-chain to ${newOwner.slice(0, 8)}...`);
-      const result = await reallocateAssetNFTOnChain(contractAddress, tokenId, newOwner, targetDid);
+      const result = await reallocateAssetNFTOnChain(
+        contractAddress,
+        tokenId,
+        newOwner,
+        targetDid,
+        activeWalletProvider
+      );
 
       // Update backend persistent state
       await fetch('/api/nft', {
@@ -559,7 +603,7 @@ export default function Home() {
     try {
       const nextState = !contractStats.isPaused;
       setTxStatus(`${nextState ? 'Pausing' : 'Unpausing'} smart contract on Polygon Amoy...`);
-      const res = await toggleContractCircuitBreaker(contractAddress, nextState);
+      const res = await toggleContractCircuitBreaker(contractAddress, nextState, activeWalletProvider);
       setTxStatus(`Circuit breaker toggled. Contract paused: ${res.isPaused}. Tx: ${res.txHash.slice(0, 16)}...`);
       fetchContractStats();
     } catch (err: any) {
@@ -569,16 +613,16 @@ export default function Home() {
     }
   };
 
-  // Deploy Live Contract directly to Polygon Amoy via MetaMask
+  // Deploy Live Contract directly to Polygon Amoy via Wallet
   const handleDeployContract = async () => {
     if (!walletAddress || !isAuthenticated) {
       alert('Please connect and authenticate your wallet first.');
       return;
     }
     setIsDeploying(true);
-    setTxStatus('Deploying SentinelAuditRegistry.sol directly to Polygon Amoy via MetaMask...');
+    setTxStatus('Deploying SentinelAuditRegistry.sol directly to Polygon Amoy via wallet...');
     try {
-      const result = await deploySentinelRegistry();
+      const result = await deploySentinelRegistry(activeWalletProvider);
       setContractAddress(result.address);
       setTxStatus(`Success: SentinelAuditRegistry deployed to Polygon Amoy! Contract Address: ${result.address}. Deployment Tx: ${result.txHash.slice(0, 18)}...`);
       fetchContractStats();
@@ -610,23 +654,12 @@ export default function Home() {
           isAuthenticated={isAuthenticated}
           userRole={userRole}
           isProcessing={isProcessing}
+          connectedWalletType={connectedWalletType}
           onRoleChange={setUserRole}
           onConnect={handleConnectWallet}
           onDisconnect={handleDisconnect}
-          onSwitchNetwork={switchOrAddPolygonAmoy}
+          onSwitchNetwork={() => switchOrAddPolygonAmoy(activeWalletProvider)}
           onOpenDIDModal={() => setIsDIDModalOpen(true)}
-        />
-
-        {/* Live Contract Status Banner */}
-        <ContractStatusBanner
-          stats={contractStats}
-          contractAddress={contractAddress}
-          userRole={userRole}
-          verifiedOnChainRole={verifiedOnChainRole}
-          isLoading={isStatsLoading}
-          onRefresh={fetchContractStats}
-          onTogglePause={handleTogglePause}
-          isAdmin={isAdmin}
         />
 
         {/* Auditor Restriction Notice */}
@@ -721,6 +754,14 @@ export default function Home() {
         isOpen={isDIDModalOpen}
         didDocument={didDocument}
         onClose={() => setIsDIDModalOpen(false)}
+      />
+
+      {/* Multi-Wallet Selection Modal (MetaMask, Rabby Wallet, Trust Wallet) */}
+      <WalletSelectModal
+        isOpen={isWalletModalOpen}
+        onClose={() => setIsWalletModalOpen(false)}
+        onSelectWallet={(walletId) => handleConnectWithWallet(walletId)}
+        isProcessing={isProcessing}
       />
     </main>
   );

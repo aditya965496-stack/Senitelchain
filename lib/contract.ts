@@ -60,13 +60,14 @@ export interface TxExecutionResult {
 
 /**
  * Ensure browser wallet is connected to Polygon Amoy Testnet (80002)
+ * Supports MetaMask, Rabby Wallet, Trust Wallet, and custom EIP-1193 providers
  */
-export async function switchOrAddPolygonAmoy(): Promise<boolean> {
-  if (typeof window === 'undefined' || !(window as any).ethereum) {
+export async function switchOrAddPolygonAmoy(customProvider?: any): Promise<boolean> {
+  const eth = customProvider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+  if (!eth || typeof eth.request !== 'function') {
     return false;
   }
 
-  const eth = (window as any).ethereum;
   try {
     await eth.request({
       method: 'wallet_switchEthereumChain',
@@ -99,6 +100,20 @@ export async function switchOrAddPolygonAmoy(): Promise<boolean> {
   }
 }
 
+/**
+ * Detect active browser provider (MetaMask, Rabby Wallet, Trust Wallet, or injected)
+ */
+export function getActiveInjectedProvider(customProvider?: any): any {
+  if (customProvider) return customProvider;
+  if (typeof window === 'undefined') return null;
+  return (
+    (window as any).rabby ||
+    (window as any).trustwallet ||
+    (window as any).ethereum ||
+    null
+  );
+}
+
 export function normalizeAddress(addr: string): string {
   const cleaned = addr.trim();
   if (!cleaned.startsWith('0x') || cleaned.length !== 42) {
@@ -112,16 +127,17 @@ export function normalizeAddress(addr: string): string {
 }
 
 /**
- * Deploy a brand-new live SentinelAuditRegistry smart contract directly from MetaMask to Polygon Amoy
+ * Deploy a brand-new live SentinelAuditRegistry smart contract directly from wallet to Polygon Amoy
  */
-export async function deploySentinelRegistry(): Promise<{ address: string; txHash: string; blockNumber: number }> {
-  if (typeof window === 'undefined' || !(window as any).ethereum) {
-    throw new Error('MetaMask or Web3 Provider is not detected.');
+export async function deploySentinelRegistry(customProvider?: any): Promise<{ address: string; txHash: string; blockNumber: number }> {
+  const activeEth = getActiveInjectedProvider(customProvider);
+  if (!activeEth) {
+    throw new Error('MetaMask, Rabby, or Trust Wallet is not detected.');
   }
 
-  await switchOrAddPolygonAmoy();
+  await switchOrAddPolygonAmoy(activeEth);
 
-  const provider = new ethers.BrowserProvider((window as any).ethereum);
+  const provider = new ethers.BrowserProvider(activeEth);
   const signer = await provider.getSigner();
   const signerAddress = await signer.getAddress();
 
@@ -163,16 +179,18 @@ export async function executeContractAccessLog(
   options?: {
     sha256Digest?: string;
     targetAddress?: string;
+    customProvider?: any;
   }
 ): Promise<TxExecutionResult> {
-  if (typeof window === 'undefined' || !(window as any).ethereum) {
-    throw new Error('MetaMask or Web3 Provider is not detected.');
+  const activeEth = getActiveInjectedProvider(options?.customProvider);
+  if (!activeEth) {
+    throw new Error('MetaMask, Rabby, or Trust Wallet is not detected.');
   }
 
   const validAddress = normalizeAddress(contractAddress);
-  await switchOrAddPolygonAmoy();
+  await switchOrAddPolygonAmoy(activeEth);
 
-  const provider = new ethers.BrowserProvider((window as any).ethereum);
+  const provider = new ethers.BrowserProvider(activeEth);
   const signer = await provider.getSigner();
   const signerAddress = await signer.getAddress();
   const did = generateDID(signerAddress);
@@ -390,18 +408,20 @@ export async function reallocateAssetNFTOnChain(
   contractAddress: string,
   tokenId: number,
   newOwnerAddress: string,
-  newOwnerDid?: string
+  newOwnerDid?: string,
+  customProvider?: any
 ): Promise<TxExecutionResult> {
-  if (typeof window === 'undefined' || !(window as any).ethereum) {
-    throw new Error('MetaMask or Web3 Provider is not detected.');
+  const activeEth = getActiveInjectedProvider(customProvider);
+  if (!activeEth) {
+    throw new Error('MetaMask, Rabby, or Trust Wallet is not detected.');
   }
 
   const validContract = normalizeAddress(contractAddress);
   const validNewOwner = normalizeAddress(newOwnerAddress);
   const targetDid = newOwnerDid || generateDID(validNewOwner);
 
-  await switchOrAddPolygonAmoy();
-  const provider = new ethers.BrowserProvider((window as any).ethereum);
+  await switchOrAddPolygonAmoy(activeEth);
+  const provider = new ethers.BrowserProvider(activeEth);
   const signer = await provider.getSigner();
   const contract = new ethers.Contract(validContract, CONTRACT_ABI, signer);
 
@@ -428,15 +448,17 @@ export async function reallocateAssetNFTOnChain(
  */
 export async function toggleContractCircuitBreaker(
   contractAddress: string,
-  pauseState: boolean
+  pauseState: boolean,
+  customProvider?: any
 ): Promise<{ txHash: string; isPaused: boolean }> {
-  if (typeof window === 'undefined' || !(window as any).ethereum) {
-    throw new Error('MetaMask or Web3 Provider is not detected.');
+  const activeEth = getActiveInjectedProvider(customProvider);
+  if (!activeEth) {
+    throw new Error('MetaMask, Rabby, or Trust Wallet is not detected.');
   }
 
   const validContract = normalizeAddress(contractAddress);
-  await switchOrAddPolygonAmoy();
-  const provider = new ethers.BrowserProvider((window as any).ethereum);
+  await switchOrAddPolygonAmoy(activeEth);
+  const provider = new ethers.BrowserProvider(activeEth);
   const signer = await provider.getSigner();
   const contract = new ethers.Contract(validContract, CONTRACT_ABI, signer);
 

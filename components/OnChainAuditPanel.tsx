@@ -80,8 +80,7 @@ export const OnChainAuditPanel: React.FC<OnChainAuditPanelProps> = ({
             className="w-full px-3.5 py-2.5 text-xs font-mono border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all shadow-sm"
           />
           <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-            Must be a deployed smart contract on Polygon Amoy. Note: A personal wallet address (e.g.{' '}
-            {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : '0x...'}) cannot be used as a contract.
+            Polygon Amoy (Chain ID 80002) smart contract registry. Enter deployed address or click &quot;Deploy New Registry&quot;.
           </p>
         </div>
 

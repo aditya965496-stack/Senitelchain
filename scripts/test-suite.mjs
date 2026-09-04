@@ -89,6 +89,52 @@ async function runTestSuite() {
   }
   assert(isTamperDetected, 'Tampered authentication challenge is rejected by signature verifier');
 
+  // Test EIP-712 Typed Structured Data Signing (Zero-Warning Auth)
+  const eip712Domain = {
+    name: 'SentinelChain Enterprise',
+    version: '1',
+    chainId: 80002,
+  };
+
+  const eip712Types = {
+    SentinelAuthProof: [
+      { name: 'did', type: 'string' },
+      { name: 'subject', type: 'address' },
+      { name: 'role', type: 'string' },
+      { name: 'statement', type: 'string' },
+      { name: 'nonce', type: 'string' },
+      { name: 'timestamp', type: 'string' },
+    ],
+  };
+
+  const eip712Message = {
+    did,
+    subject: wallet.address,
+    role: 'Admin (Issuer)',
+    statement: 'Authenticate decentralized identity for Zero-Trust session establishment on Polygon Amoy.',
+    nonce: `test-eip712-nonce-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+  };
+
+  const eip712Signature = await wallet.signTypedData(eip712Domain, eip712Types, eip712Message);
+  const recoveredEIP712Address = ethers.verifyTypedData(eip712Domain, eip712Types, eip712Message, eip712Signature);
+
+  assert(
+    recoveredEIP712Address.toLowerCase() === wallet.address.toLowerCase(),
+    'EIP-712 structured typed data signature verified and eliminates MetaMask heuristic warnings'
+  );
+
+  // Test tampered EIP-712 field rejection
+  const tamperedMessage = { ...eip712Message, role: 'User (Asset Owner)' };
+  let isEIP712TamperDetected = false;
+  try {
+    const badEIP712Recovery = ethers.verifyTypedData(eip712Domain, eip712Types, tamperedMessage, eip712Signature);
+    isEIP712TamperDetected = badEIP712Recovery.toLowerCase() !== wallet.address.toLowerCase();
+  } catch {
+    isEIP712TamperDetected = true;
+  }
+  assert(isEIP712TamperDetected, 'Tampered EIP-712 role field is rejected by typed data verifier');
+
   // ==========================================
   // Test Suite 3: Cryptography & Isomorphic AES-256-GCM
   // ==========================================

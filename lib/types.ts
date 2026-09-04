@@ -101,7 +101,7 @@ export interface StoredIdentity {
 }
 
 export interface CryptographicProof {
-  type: 'EcdsaSecp256k1RecoveryMethod2020';
+  type: 'EcdsaSecp256k1RecoveryMethod2020' | 'Eip712Signature2021';
   created: string;
   verificationMethod: string;
   proofPurpose: 'authentication';

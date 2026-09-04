@@ -7,6 +7,7 @@ interface NavbarProps {
   isAuthenticated: boolean;
   userRole: UserRole;
   isProcessing: boolean;
+  connectedWalletType?: string;
   onRoleChange: (role: UserRole) => void;
   onConnect: () => void;
   onDisconnect: () => void;
@@ -19,6 +20,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   isAuthenticated,
   userRole,
   isProcessing,
+  connectedWalletType,
   onRoleChange,
   onConnect,
   onDisconnect,
@@ -69,6 +71,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-xs font-mono bg-white border border-slate-200/90 px-3 py-2 rounded-xl text-slate-700 shadow-sm flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
               <strong className="text-slate-900">{formatAddress(walletAddress)}</strong>
+              {connectedWalletType && (
+                <span className="text-[10px] text-indigo-700 bg-indigo-50 font-mono font-semibold px-1.5 py-0.5 rounded border border-indigo-200">
+                  {connectedWalletType}
+                </span>
+              )}
               <span className="text-[11px] text-slate-700 bg-slate-100 font-sans font-medium px-2 py-0.5 rounded-md border border-slate-200/50">
                 {userRole.split(' ')[0]}
               </span>
