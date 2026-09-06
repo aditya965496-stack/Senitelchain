@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { EncryptedPayload, UserRole } from '@/lib/types';
 import { DecryptionVerification } from '@/lib/crypto';
 import {
@@ -8,7 +8,9 @@ import {
   CheckCircleIcon,
   DownloadIcon,
   FileTextIcon,
-  CpuChipIcon,
+  CopyIcon,
+  CheckIcon,
+  AlertCircleIcon,
 } from './Icons';
 
 interface IngestionGatewayProps {
@@ -22,6 +24,7 @@ interface IngestionGatewayProps {
   onEncrypt: () => void;
   onPinIPFS: () => void;
   onVerifyDecrypt: () => void;
+  onLockFile?: () => void;
 }
 
 export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
@@ -35,8 +38,61 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
   onEncrypt,
   onPinIPFS,
   onVerifyDecrypt,
+  onLockFile,
 }) => {
   const isAuditor = userRole.includes('Auditor');
+  const [unlockKey, setUnlockKey] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const handleCopy = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const lockedBlobUrl = useMemo(() => {
+    if (!encryptedPayload) return '';
+    try {
+      const blob = new Blob([encryptedPayload.encryptedBuffer], { type: 'application/octet-stream' });
+      return URL.createObjectURL(blob);
+    } catch {
+      return '';
+    }
+  }, [encryptedPayload]);
+
+  const handleUnlockAndDecrypt = () => {
+    if (!encryptedPayload) return;
+    const input = unlockKey.trim();
+    if (!input) {
+      setUnlockError('Please enter the Ciphertext or IPFS Storage CID to unlock this file.');
+      return;
+    }
+
+    const cleanInput = input.toLowerCase().trim();
+    const rawCipher = (encryptedPayload.rawCiphertextHex || '').toLowerCase();
+    const displayCipher = encryptedPayload.ciphertextHex.toLowerCase().replace('...', '').trim();
+    const cid = (pinnedCID || '').toLowerCase().trim();
+    const sha = encryptedPayload.sha256Hash.toLowerCase().trim();
+
+    // Verification check: matches Ciphertext (full or prefix), IPFS Storage CID, or SHA-256
+    const isCipherMatch =
+      cleanInput.length >= 10 &&
+      (rawCipher.includes(cleanInput) ||
+       cleanInput.includes(displayCipher) ||
+       displayCipher.includes(cleanInput.replace('...', '')) ||
+       (cleanInput.startsWith('0x') ? rawCipher.startsWith(cleanInput) : rawCipher.startsWith(`0x${cleanInput}`)));
+
+    const isCidMatch = Boolean(cid && (cleanInput === cid || cleanInput.includes(cid) || cid.includes(cleanInput)));
+    const isShaMatch = cleanInput === sha || cleanInput === sha.replace('0x', '') || sha.includes(cleanInput);
+
+    if (isCipherMatch || isCidMatch || isShaMatch) {
+      setUnlockError('');
+      onVerifyDecrypt();
+    } else {
+      setUnlockError('Access Denied: The entered credential does not match the file\'s Ciphertext or IPFS Storage CID. File remains locked.');
+    }
+  };
 
   return (
     <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-[0_1px_3px_rgba(16,24,40,0.04)] space-y-5">
@@ -50,10 +106,6 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
             Hardware-accelerated AES-256-GCM zero-knowledge client sealing.
           </p>
         </div>
-        <span className="text-[11px] font-mono bg-slate-100 text-slate-700 font-semibold px-2.5 py-1 rounded-lg border border-slate-200/60 inline-flex items-center gap-1.5">
-          <CpuChipIcon className="w-3.5 h-3.5 text-slate-500" />
-          <span>WebCrypto API</span>
-        </span>
       </div>
 
       {/* File Upload Selector */}
@@ -110,30 +162,165 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
 
       {/* Encrypted Output Display */}
       {encryptedPayload && (
-        <div className="space-y-2 pt-1">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-              Sealed Ciphertext Blob & Integrity Digest
-            </span>
-            <button
-              onClick={onVerifyDecrypt}
-              disabled={isProcessing}
-              className="text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-            >
-              <UnlockIcon className="w-3.5 h-3.5 text-emerald-700" />
-              <span>Verify Decrypt & Integrity</span>
-            </button>
+        <div className="space-y-3 pt-1">
+          {/* Card Header & Locked Status */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                Sealed Ciphertext Blob & Integrity Digest
+              </span>
+              <span
+                className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold inline-flex items-center gap-1 ${
+                  decryptedResult
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}
+              >
+                {decryptedResult ? (
+                  <>
+                    <UnlockIcon className="w-3 h-3 text-emerald-700" />
+                    <span>UNLOCKED</span>
+                  </>
+                ) : (
+                  <>
+                    <LockIcon className="w-3 h-3 text-amber-700" />
+                    <span>LOCKED</span>
+                  </>
+                )}
+              </span>
+            </div>
+
+            {/* Download Locked File (.enc) */}
+            {lockedBlobUrl && (
+              <a
+                href={lockedBlobUrl}
+                download={`locked_${selectedFile?.name || 'payload'}.enc`}
+                className="text-[11px] font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/90 px-3 py-1 rounded-xl border border-slate-200/90 transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs self-start sm:self-auto"
+                title="Download raw locked encrypted ciphertext blob (.enc)"
+              >
+                <DownloadIcon className="w-3 h-3 text-slate-600" />
+                <span>Download Locked File (.enc)</span>
+              </a>
+            )}
           </div>
 
-          <div className="text-[11px] font-mono text-slate-700 bg-slate-50 p-3.5 rounded-xl border border-slate-200/90 break-all leading-relaxed space-y-1.5">
-            <div>
-              <span className="text-slate-400">CIPHERTEXT: </span>
-              {encryptedPayload.ciphertextHex}
+          {/* Ciphertext & Digest Credentials Box */}
+          <div className="text-[11px] font-mono text-slate-700 bg-slate-50 p-3.5 rounded-xl border border-slate-200/90 break-all leading-relaxed space-y-2">
+            {/* CIPHERTEXT with Copy */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <span className="text-slate-400 font-bold">CIPHERTEXT: </span>
+                <span className="text-slate-800">{encryptedPayload.ciphertextHex}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  handleCopy(
+                    encryptedPayload.rawCiphertextHex || encryptedPayload.ciphertextHex,
+                    'ciphertext'
+                  )
+                }
+                className="text-slate-400 hover:text-slate-700 shrink-0 p-1 rounded hover:bg-slate-200/60 transition-all cursor-pointer"
+                title="Copy Ciphertext"
+              >
+                {copiedField === 'ciphertext' ? (
+                  <CheckIcon className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <CopyIcon className="w-3.5 h-3.5" />
+                )}
+              </button>
             </div>
-            <div className="text-[10px] text-slate-500">
-              <span>SHA-256 CHECKSUM: </span>
-              <strong className="text-slate-700">{encryptedPayload.sha256Hash}</strong>
+
+            {/* SHA-256 CHECKSUM with Copy */}
+            <div className="flex items-center justify-between gap-2 text-[10px] text-slate-500 pt-1.5 border-t border-slate-200/60">
+              <div className="truncate">
+                <span>SHA-256 CHECKSUM: </span>
+                <strong className="text-slate-700">{encryptedPayload.sha256Hash}</strong>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCopy(encryptedPayload.sha256Hash, 'sha256')}
+                className="text-slate-400 hover:text-slate-700 shrink-0 p-1 rounded hover:bg-slate-200/60 transition-all cursor-pointer"
+                title="Copy SHA-256 Checksum"
+              >
+                {copiedField === 'sha256' ? (
+                  <CheckIcon className="w-3.5 h-3.5 text-emerald-600" />
+                ) : (
+                  <CopyIcon className="w-3.5 h-3.5" />
+                )}
+              </button>
             </div>
+
+            {/* IPFS STORAGE CID with Copy (if pinned) */}
+            {pinnedCID && (
+              <div className="flex items-center justify-between gap-2 text-[10px] text-blue-900 bg-blue-50/80 p-2 rounded-lg border border-blue-200/70 pt-1.5">
+                <div className="truncate">
+                  <span className="font-semibold text-blue-800">IPFS Storage CID: </span>
+                  <strong className="text-blue-950 font-mono">{pinnedCID}</strong>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopy(pinnedCID, 'cid')}
+                  className="text-blue-600 hover:text-blue-900 shrink-0 p-1 rounded hover:bg-blue-100 transition-all cursor-pointer"
+                  title="Copy IPFS Storage CID"
+                >
+                  {copiedField === 'cid' ? (
+                    <CheckIcon className="w-3.5 h-3.5 text-emerald-600" />
+                  ) : (
+                    <CopyIcon className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Access Control: Unlock by Ciphertext or IPFS Storage CID */}
+          <div className="bg-slate-50/80 border border-slate-200/90 rounded-xl p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <LockIcon className="w-3.5 h-3.5 text-slate-700" />
+                <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                  Access Control — Locked File Authorization
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-500 font-medium">
+                Locked by Ciphertext / IPFS
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              This file is locked by the sealed ciphertext and IPFS storage. To access and decrypt the locked file, provide the matching <strong className="text-slate-800">CIPHERTEXT</strong> or <strong className="text-slate-800">IPFS Storage CID</strong>.
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={unlockKey}
+                onChange={(e) => {
+                  setUnlockKey(e.target.value);
+                  if (unlockError) setUnlockError('');
+                }}
+                placeholder="Enter CIPHERTEXT (0x...) or IPFS Storage CID (bafy...)..."
+                className="flex-1 px-3.5 py-2 text-xs font-mono border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all placeholder:text-slate-400 shadow-2xs"
+              />
+              <button
+                type="button"
+                onClick={handleUnlockAndDecrypt}
+                disabled={isProcessing}
+                className="text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-40 shrink-0"
+              >
+                <UnlockIcon className="w-3.5 h-3.5 text-white" />
+                <span>Verify Decrypt & Integrity</span>
+              </button>
+            </div>
+
+            {/* Unlock Error Feedback */}
+            {unlockError && (
+              <div className="flex items-center gap-1.5 text-xs text-rose-700 bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl">
+                <AlertCircleIcon className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{unlockError}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -146,9 +333,25 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
               <CheckCircleIcon className="w-4 h-4 text-emerald-600" />
               <span>Hardware AES-256-GCM Verification Passed</span>
             </span>
-            <span className="text-[10px] bg-emerald-200/70 text-emerald-900 font-mono px-2 py-0.5 rounded-full font-bold">
-              128-bit Auth Tag Valid
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] bg-emerald-200/70 text-emerald-900 font-mono px-2 py-0.5 rounded-full font-bold">
+                128-bit Auth Tag Valid
+              </span>
+              {onLockFile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUnlockKey('');
+                    onLockFile();
+                  }}
+                  className="text-[10px] font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-2 py-0.5 rounded-full transition-all cursor-pointer inline-flex items-center gap-1"
+                  title="Lock the file again"
+                >
+                  <LockIcon className="w-2.5 h-2.5 text-slate-500" />
+                  <span>Relock File</span>
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="text-[11px] font-mono text-emerald-950 bg-white/90 p-3 rounded-xl border border-emerald-200/70 break-all space-y-1">
@@ -176,7 +379,7 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
       )}
 
       {/* Storage CID Output */}
-      {pinnedCID && (
+      {pinnedCID && !encryptedPayload && (
         <div className="text-[11px] font-mono text-slate-800 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 flex items-center justify-between">
           <span><strong>IPFS Storage CID:</strong> {pinnedCID}</span>
           <span className="text-[10px] bg-slate-900 text-white px-2 py-0.5 rounded-md font-bold">

@@ -16,6 +16,7 @@ export interface NodeItem {
 
 export interface EncryptedPayload {
   ciphertextHex: string;
+  rawCiphertextHex?: string;
   ivHex: string;
   saltHex?: string;
   originalName: string;

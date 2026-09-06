@@ -10,7 +10,7 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: [
-          'Inter',
+          '"Open Sans"',
           '-apple-system',
           'BlinkMacSystemFont',
           '"Segoe UI"',
@@ -20,6 +20,7 @@ const config: Config = {
           'sans-serif',
         ],
         mono: [
+          '"Open Sans"',
           'ui-monospace',
           'SFMono-Regular',
           'Menlo',

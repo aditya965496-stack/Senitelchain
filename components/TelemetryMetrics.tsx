@@ -1,6 +1,5 @@
 import React from 'react';
 import { TelemetryStats } from '@/lib/types';
-import { CpuChipIcon, FileTextIcon, LinkChainIcon } from './Icons';
 
 interface TelemetryMetricsProps {
   telemetry: TelemetryStats;
@@ -28,14 +27,9 @@ export const TelemetryMetrics: React.FC<TelemetryMetricsProps> = ({ telemetry })
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
         {/* Metric Card 1 */}
         <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-sans">
-              Encryption Latency
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-white border border-slate-200/80 flex items-center justify-center text-slate-600 shadow-2xs">
-              <CpuChipIcon className="w-3.5 h-3.5 text-slate-600" />
-            </div>
-          </div>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-sans block mb-1.5">
+            Encryption Latency
+          </span>
           <span className="text-xl font-bold text-slate-900 block font-sans tracking-tight tabular-nums">
             {telemetry.encryptionLatencyMs !== null
               ? `${telemetry.encryptionLatencyMs} ms`
@@ -48,14 +42,9 @@ export const TelemetryMetrics: React.FC<TelemetryMetricsProps> = ({ telemetry })
 
         {/* Metric Card 2 */}
         <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-sans">
-              Payload Footprint
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-white border border-slate-200/80 flex items-center justify-center text-slate-600 shadow-2xs">
-              <FileTextIcon className="w-3.5 h-3.5 text-slate-600" />
-            </div>
-          </div>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-sans block mb-1.5">
+            Payload Footprint
+          </span>
           <span className="text-xl font-bold text-slate-900 block font-sans tracking-tight tabular-nums">
             {telemetry.payloadFootprintBytes !== null
               ? `${(telemetry.payloadFootprintBytes / 1024).toFixed(2)} KB`
@@ -68,14 +57,9 @@ export const TelemetryMetrics: React.FC<TelemetryMetricsProps> = ({ telemetry })
 
         {/* Metric Card 3 */}
         <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/70 hover:border-slate-300 transition-all">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-sans">
-              Gas Consumed
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-white border border-slate-200/80 flex items-center justify-center text-slate-600 shadow-2xs">
-              <LinkChainIcon className="w-3.5 h-3.5 text-slate-600" />
-            </div>
-          </div>
+          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-sans block mb-1.5">
+            Gas Consumed
+          </span>
           <span className="text-xl font-bold text-slate-900 block font-sans tracking-tight tabular-nums">
             {telemetry.gasUsed || 'Awaiting Transaction'}
           </span>

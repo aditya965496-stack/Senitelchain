@@ -87,6 +87,7 @@ export async function encryptFilePayload(file: File): Promise<EncryptedPayload> 
 
   return {
     ciphertextHex: `0x${ciphertextHex.slice(0, 64)}...`,
+    rawCiphertextHex: `0x${ciphertextHex}`,
     ivHex: `0x${ivHex}`,
     originalName: file.name,
     mimeType: file.type || 'application/octet-stream',

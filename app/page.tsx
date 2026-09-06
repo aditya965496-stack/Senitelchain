@@ -697,6 +697,7 @@ export default function Home() {
               onEncrypt={handleEncrypt}
               onPinIPFS={handlePinIPFS}
               onVerifyDecrypt={handleVerifyDecrypt}
+              onLockFile={() => setDecryptedResult(null)}
             />
           </div>
 
