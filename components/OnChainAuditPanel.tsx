@@ -84,14 +84,29 @@ export const OnChainAuditPanel: React.FC<OnChainAuditPanelProps> = ({
             }`}
           />
           {walletAddress && contractAddress && contractAddress.trim().toLowerCase() === walletAddress.trim().toLowerCase() ? (
-            <p className="text-[11px] text-amber-600 font-medium mt-1.5 flex items-center gap-1">
-              <span>⚠️</span>
-              <span>This is your personal wallet address (EOA), not a smart contract. Please click &quot;Deploy New Registry&quot; or enter a deployed contract address.</span>
-            </p>
+            <div className="mt-1.5 p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-2">
+              <span className="text-[11px] text-amber-800 font-medium leading-tight">
+                ⚠️ Your personal wallet address is entered here, not a smart contract.
+              </span>
+              <button
+                type="button"
+                onClick={() => onContractAddressChange('')}
+                className="text-[11px] font-bold text-amber-950 bg-amber-200/90 hover:bg-amber-300 px-2.5 py-1 rounded-lg transition-all shrink-0 cursor-pointer shadow-xs"
+              >
+                Clear Field
+              </button>
+            </div>
           ) : (
-            <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-              Polygon Amoy (Chain ID 80002) smart contract registry. Enter deployed address or click &quot;Deploy New Registry&quot;.
-            </p>
+            <div className="flex items-center justify-between mt-1 text-[10px] text-slate-400">
+              <span>Polygon Amoy (Chain ID 80002) smart contract registry.</span>
+              <button
+                type="button"
+                onClick={() => onContractAddressChange('0x71C94bC817D1Ff8902898B677A016dAf3460A9C1')}
+                className="text-blue-600 hover:text-blue-800 underline font-medium cursor-pointer"
+              >
+                Use Demo Registry
+              </button>
+            </div>
           )}
         </div>
 
