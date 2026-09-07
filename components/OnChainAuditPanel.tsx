@@ -77,11 +77,22 @@ export const OnChainAuditPanel: React.FC<OnChainAuditPanelProps> = ({
             value={contractAddress}
             onChange={(e) => onContractAddressChange(e.target.value)}
             placeholder="0x... (Paste Deployed Sentinel Registry Address)"
-            className="w-full px-3.5 py-2.5 text-xs font-mono border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all shadow-sm"
+            className={`w-full px-3.5 py-2.5 text-xs font-mono border rounded-xl bg-white focus:outline-none transition-all shadow-sm ${
+              walletAddress && contractAddress && contractAddress.trim().toLowerCase() === walletAddress.trim().toLowerCase()
+                ? 'border-amber-400 focus:ring-1 focus:ring-amber-500'
+                : 'border-slate-200 focus:ring-1 focus:ring-slate-900'
+            }`}
           />
-          <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-            Polygon Amoy (Chain ID 80002) smart contract registry. Enter deployed address or click &quot;Deploy New Registry&quot;.
-          </p>
+          {walletAddress && contractAddress && contractAddress.trim().toLowerCase() === walletAddress.trim().toLowerCase() ? (
+            <p className="text-[11px] text-amber-600 font-medium mt-1.5 flex items-center gap-1">
+              <span>⚠️</span>
+              <span>This is your personal wallet address (EOA), not a smart contract. Please click &quot;Deploy New Registry&quot; or enter a deployed contract address.</span>
+            </p>
+          ) : (
+            <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+              Polygon Amoy (Chain ID 80002) smart contract registry. Enter deployed address or click &quot;Deploy New Registry&quot;.
+            </p>
+          )}
         </div>
 
         {/* Asset Identifier Input */}

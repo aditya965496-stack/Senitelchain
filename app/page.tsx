@@ -628,13 +628,24 @@ export default function Home() {
       fetchContractStats();
     } catch (err: any) {
       console.error('Deployment error:', err);
-      const errMsg = err?.message || '';
-      if (errMsg.includes('INSUFFICIENT_FUNDS')) {
-        setTxStatus('Error: Insufficient POL testnet balance to deploy contract. Claim free testnet POL from the faucet link below.');
-      } else if (err?.code === 'ACTION_REJECTED' || err?.code === 4001) {
+      const rawMsg = err?.info?.error?.message || err?.error?.message || err?.data?.message || err?.message || '';
+      const shortMsg = err?.shortMessage || '';
+      const combined = `${rawMsg} ${shortMsg} ${err?.message || ''}`.toLowerCase();
+
+      if (combined.includes('insufficient funds') || combined.includes('insufficient_funds') || combined.includes('exceeds balance')) {
+        setTxStatus(
+          rawMsg.includes('INSUFFICIENT_FUNDS:')
+            ? rawMsg
+            : 'Error: Insufficient POL testnet balance. Deploying the smart contract requires ~0.15–0.20 POL for gas on Polygon Amoy. Please claim more POL from the faucet link below.'
+        );
+      } else if (err?.code === 'ACTION_REJECTED' || err?.code === 4001 || combined.includes('user rejected') || combined.includes('cancelled')) {
         setTxStatus('Deployment transaction was cancelled in your wallet.');
+      } else if (shortMsg === 'could not coalesce error') {
+        setTxStatus(
+          'Deployment Failed: Transaction was rejected by your wallet or RPC node (typically because wallet balance < 0.15 POL needed for contract deployment gas, or custom gas fees). Please claim at least 0.25 POL from the faucet.'
+        );
       } else {
-        setTxStatus(`Deployment Failed: ${err?.shortMessage || errMsg || 'Failed to deploy contract.'}`);
+        setTxStatus(`Deployment Failed: ${shortMsg || rawMsg || 'Failed to deploy contract.'}`);
       }
     } finally {
       setIsDeploying(false);
