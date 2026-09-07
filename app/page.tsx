@@ -17,6 +17,7 @@ import {
   generateDID,
   createDIDDocument,
   createAuthChallenge,
+  createEIP4361Challenge,
   createEIP712AuthData,
   verifyDIDSignature,
   formatDID,
@@ -244,27 +245,15 @@ export default function Home() {
 
       const signer = await browserProvider.getSigner();
 
-      // Zero-Warning Cryptographic Authentication via EIP-712 Typed Structured Data
-      const authData = createEIP712AuthData(address, did, userRole);
-      setTxStatus(`Please sign cryptographic proof in ${walletLabel}...`);
+      // Zero-Warning Sign-In with Ethereum (EIP-4361 / SIWE)
+      // Natively parsed by MetaMask, Rabby, and Trust Wallet with verified shield and zero danger warnings
+      const siweChallenge = createEIP4361Challenge(address, did, userRole);
+      setTxStatus(`Please sign authenticated identity proof in ${walletLabel}...`);
 
       try {
-        let signature: string;
-        try {
-          // Standard EIP-712 typed signing (Zero-warning in MetaMask, Rabby, and Trust Wallet)
-          signature = await signer.signTypedData(
-            authData.domain,
-            authData.types,
-            authData.message
-          );
-        } catch (typedErr: any) {
-          // Graceful fallback to personal_sign if an older wallet extension does not implement signTypedData
-          console.warn('EIP-712 typed data signing fallback to personal_sign:', typedErr);
-          const fallbackChallenge = createAuthChallenge(address, did, userRole);
-          signature = await signer.signMessage(fallbackChallenge);
-        }
+        const signature = await signer.signMessage(siweChallenge);
 
-        const isValid = verifyDIDSignature(authData, signature, address);
+        const isValid = verifyDIDSignature(siweChallenge, signature, address);
         if (!isValid) {
           throw new Error('Cryptographic signature verification failed.');
         }
@@ -277,7 +266,7 @@ export default function Home() {
             body: JSON.stringify({
               address,
               role: userRole,
-              challenge: JSON.stringify(authData),
+              challenge: siweChallenge,
               signature,
             }),
           });

@@ -84,7 +84,7 @@ export async function switchOrAddPolygonAmoy(customProvider?: any): Promise<bool
               chainId: POLYGON_AMOY_CHAIN_ID_HEX,
               chainName: 'Polygon Amoy Testnet',
               nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
-              rpcUrls: ['https://polygon-amoy.drpc.org', 'https://rpc-amoy.polygon.technology/'],
+              rpcUrls: ['https://polygon-amoy-bor-rpc.publicnode.com', 'https://polygon-amoy.drpc.org'],
               blockExplorerUrls: ['https://amoy.polygonscan.com/'],
             },
           ],
