@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import type { StoredIdentity, AssetNFT, AuditRecord, UserRole } from './types';
 
+import os from 'os';
+
 export interface DatabaseSchema {
   version: string;
   updatedAt: string;
@@ -10,8 +12,31 @@ export interface DatabaseSchema {
   auditRecords: AuditRecord[];
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_FILE = path.join(DATA_DIR, 'sentinel-data.json');
+/**
+ * Dynamically resolves writable storage directory.
+ * On serverless platforms (Vercel, AWS Lambda), process.cwd() is read-only,
+ * so this automatically falls back to os.tmpdir() to prevent EROFS crashes.
+ */
+function getStoragePaths(): { dir: string; file: string } {
+  try {
+    const localDir = path.join(process.cwd(), 'data');
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    const testFile = path.join(localDir, `.write-test-${Date.now()}`);
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    return { dir: localDir, file: path.join(localDir, 'sentinel-data.json') };
+  } catch {
+    const tmpDir = path.join(os.tmpdir(), 'sentinel-data');
+    try {
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+    } catch {}
+    return { dir: tmpDir, file: path.join(tmpDir, 'sentinel-data.json') };
+  }
+}
 
 // Default initial seed data
 function getInitialSeedData(): DatabaseSchema {
@@ -54,34 +79,36 @@ function getInitialSeedData(): DatabaseSchema {
   };
 }
 
-let inMemoryCache: DatabaseSchema | null = null;
+// Global cache to maintain state across serverless container warm cycles
+const globalStore = globalThis as unknown as { __sentinel_db_cache?: DatabaseSchema };
 
 /**
- * Initializes database directory and loads data into memory
+ * Initializes database directory and loads data into memory safely
  */
 function loadDatabase(): DatabaseSchema {
-  if (inMemoryCache) {
-    return inMemoryCache;
+  if (globalStore.__sentinel_db_cache) {
+    return globalStore.__sentinel_db_cache;
   }
 
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    const { dir, file } = getStoragePaths();
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
 
-    if (fs.existsSync(DB_FILE)) {
-      const content = fs.readFileSync(DB_FILE, 'utf8');
-      inMemoryCache = JSON.parse(content);
-      return inMemoryCache!;
+    if (fs.existsSync(file)) {
+      const content = fs.readFileSync(file, 'utf8');
+      globalStore.__sentinel_db_cache = JSON.parse(content);
+      return globalStore.__sentinel_db_cache!;
     }
   } catch (err) {
-    console.warn('Failed to load database file, falling back to seed:', err);
+    console.warn('Notice: Loading in-memory genesis database state:', err);
   }
 
   // Initialize with seed
-  inMemoryCache = getInitialSeedData();
-  persistDatabase(inMemoryCache);
-  return inMemoryCache;
+  globalStore.__sentinel_db_cache = getInitialSeedData();
+  persistDatabase(globalStore.__sentinel_db_cache);
+  return globalStore.__sentinel_db_cache;
 }
 
 /**
@@ -89,16 +116,18 @@ function loadDatabase(): DatabaseSchema {
  */
 function persistDatabase(data: DatabaseSchema): void {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    const { dir, file } = getStoragePaths();
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
 
     data.updatedAt = new Date().toISOString();
-    const tempFile = `${DB_FILE}.${Date.now()}.tmp`;
+    const tempFile = `${file}.${Date.now()}.tmp`;
     fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf8');
-    fs.renameSync(tempFile, DB_FILE);
+    fs.renameSync(tempFile, file);
   } catch (err) {
-    console.error('Failed to persist database file to disk:', err);
+    // Non-fatal: memory cache remains operational even if host filesystem rejects write
+    console.warn('Notice: Host filesystem write skipped, state preserved in memory:', err);
   }
 }
 

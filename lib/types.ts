@@ -119,7 +119,7 @@ export interface AuditRecord {
   txHash: string;
   gasUsed: string;
   blockNumber?: number;
-  status: 'Verified' | 'Pending' | 'Reverted';
+  status: 'Verified' | 'Pending' | 'Reverted' | 'Simulated (Off-Chain)';
   explorerUrl?: string;
   actionType?: 'Identity Registered' | 'NFT Minted' | 'Asset Allocated' | 'Access Verified' | 'Role Updated';
   tokenId?: number;
