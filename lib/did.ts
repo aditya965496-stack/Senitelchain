@@ -170,49 +170,28 @@ export function verifyEIP712Signature(
 }
 
 /**
- * Create EIP-4361 (Sign-In with Ethereum - SIWE) compliant authentication challenge.
- * MetaMask, Rabby, and Trust Wallet natively recognize this official standard,
- * presenting a verified "Sign-in Request" dialog and eliminating all "Deceptive Request / Dangerous Message" warnings.
- */
-export function createEIP4361Challenge(
-  address: string,
-  did: string,
-  role: UserRole,
-  nonce: string = generateSecureNonce(),
-  options?: { domain?: string; uri?: string }
-): string {
-  const domain = options?.domain || (typeof window !== 'undefined' && window.location?.host ? window.location.host : 'localhost:3000');
-  const uri = options?.uri || (typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'http://localhost:3000');
-  const issuedAt = new Date().toISOString();
-
-  return [
-    `${domain} wants you to sign in with your Ethereum account:`,
-    address,
-    '',
-    `Sign in to SentinelChain Enterprise Zero-Trust Portal under ${role} role.`,
-    '',
-    `URI: ${uri}`,
-    'Version: 1',
-    `Chain ID: ${POLYGON_AMOY_CHAIN_ID}`,
-    `Nonce: ${nonce}`,
-    `Issued At: ${issuedAt}`,
-    'Resources:',
-    `- ${did}`,
-    `- urn:sentinel:role:${role.replace(/\s+/g, '_')}`,
-  ].join('\n');
-}
-
-/**
- * Backward-compatible authentication challenge generator (EIP-4361 compliant)
+ * Create a cryptographic authentication challenge for wallet signing (legacy personal_sign fallback)
  */
 export function createAuthChallenge(
   address: string,
   did: string,
   role: UserRole,
-  nonce: string = generateSecureNonce(),
-  options?: { domain?: string; uri?: string }
+  nonce: string = generateSecureNonce()
 ): string {
-  return createEIP4361Challenge(address, did, role, nonce, options);
+  const timestamp = new Date().toISOString();
+  return [
+    '=== SentinelChain Zero-Trust Access Portal ===',
+    'Self-Sovereign Identity Authentication Proof',
+    '',
+    `DID: ${did}`,
+    `Subject: ${address}`,
+    `Assigned Role: ${role}`,
+    `Network: Polygon Amoy (Chain ID ${POLYGON_AMOY_CHAIN_ID})`,
+    `Nonce: ${nonce}`,
+    `Timestamp: ${timestamp}`,
+    '',
+    'I cryptographically authenticate my decentralized identity and declare zero-trust session establishment.',
+  ].join('\n');
 }
 
 /**

@@ -17,24 +17,20 @@ import {
   generateDID,
   createDIDDocument,
   createAuthChallenge,
-  createEIP4361Challenge,
   createEIP712AuthData,
   verifyDIDSignature,
   formatDID,
 } from '@/lib/did';
 import {
   DEFAULT_CONTRACT_ADDRESS,
-  DEMO_REGISTRY_ADDRESS,
   switchOrAddPolygonAmoy,
   executeContractAccessLog,
-  executeDemoAuditLog,
   deploySentinelRegistry,
   getContractSystemStats,
   verifyUserRoleOnChain,
   reallocateAssetNFTOnChain,
   toggleContractCircuitBreaker,
   ContractSystemStats,
-  TxExecutionResult,
 } from '@/lib/contract';
 import { SupportedWalletId, getWalletProvider } from '@/lib/wallets';
 import { Navbar } from '@/components/Navbar';
@@ -192,7 +188,6 @@ export default function Home() {
             const did = generateDID(addr);
             setUserDID(did);
             setDidDocument(createDIDDocument(addr, userRole));
-            setContractAddress((prev) => (prev.trim().toLowerCase() === addr.trim().toLowerCase() ? '' : prev));
           }
         })
         .catch(console.error);
@@ -235,7 +230,6 @@ export default function Home() {
       if (!accounts || accounts.length === 0) throw new Error('No accounts found in wallet');
       const address = accounts[0];
       setWalletAddress(address);
-      setContractAddress((prev) => (prev.trim().toLowerCase() === address.trim().toLowerCase() ? '' : prev));
 
       const did = generateDID(address);
       setUserDID(did);
@@ -245,15 +239,27 @@ export default function Home() {
 
       const signer = await browserProvider.getSigner();
 
-      // Zero-Warning Sign-In with Ethereum (EIP-4361 / SIWE)
-      // Natively parsed by MetaMask, Rabby, and Trust Wallet with verified shield and zero danger warnings
-      const siweChallenge = createEIP4361Challenge(address, did, userRole);
-      setTxStatus(`Please sign authenticated identity proof in ${walletLabel}...`);
+      // Zero-Warning Cryptographic Authentication via EIP-712 Typed Structured Data
+      const authData = createEIP712AuthData(address, did, userRole);
+      setTxStatus(`Please sign cryptographic proof in ${walletLabel}...`);
 
       try {
-        const signature = await signer.signMessage(siweChallenge);
+        let signature: string;
+        try {
+          // Standard EIP-712 typed signing (Zero-warning in MetaMask, Rabby, and Trust Wallet)
+          signature = await signer.signTypedData(
+            authData.domain,
+            authData.types,
+            authData.message
+          );
+        } catch (typedErr: any) {
+          // Graceful fallback to personal_sign if an older wallet extension does not implement signTypedData
+          console.warn('EIP-712 typed data signing fallback to personal_sign:', typedErr);
+          const fallbackChallenge = createAuthChallenge(address, did, userRole);
+          signature = await signer.signMessage(fallbackChallenge);
+        }
 
-        const isValid = verifyDIDSignature(siweChallenge, signature, address);
+        const isValid = verifyDIDSignature(authData, signature, address);
         if (!isValid) {
           throw new Error('Cryptographic signature verification failed.');
         }
@@ -266,7 +272,7 @@ export default function Home() {
             body: JSON.stringify({
               address,
               role: userRole,
-              challenge: siweChallenge,
+              challenge: JSON.stringify(authData),
               signature,
             }),
           });
@@ -442,51 +448,30 @@ export default function Home() {
         return;
       }
 
+      if (!contractAddress || !contractAddress.startsWith('0x')) {
+        setTxStatus('Error: Please specify a deployed smart contract address or click "Deploy New Registry".');
+        setIsProcessing(false);
+        return;
+      }
+
+      if (contractAddress.toLowerCase() === walletAddress.toLowerCase()) {
+        setTxStatus('Error: The contract address cannot be your personal wallet address (EOA). Please enter your deployed SentinelAuditRegistry contract or click "Deploy New Registry".');
+        setIsProcessing(false);
+        return;
+      }
+
       if (!assetId.trim()) {
         setTxStatus('Error: Asset identifier (CID) required before committing to the blockchain.');
         setIsProcessing(false);
         return;
       }
 
-      const isPersonalWallet = Boolean(
-        walletAddress && contractAddress && contractAddress.trim().toLowerCase() === walletAddress.trim().toLowerCase()
-      );
-      const hasLiveContract = Boolean(
-        contractAddress && contractAddress.startsWith('0x') && contractAddress.length === 42 && !isPersonalWallet
-      );
-
-      let result: TxExecutionResult;
-      let isRealOnChain = false;
-
-      if (hasLiveContract) {
-        setTxStatus(`Broadcasting real transaction as [${userRole}] to Polygon Amoy via MetaMask...`);
-        try {
-          result = await executeContractAccessLog(contractAddress, assetId, userRole, {
-            sha256Digest: encryptedPayload?.sha256Hash,
-            targetAddress: walletAddress,
-            customProvider: activeWalletProvider,
-          });
-          isRealOnChain = true;
-        } catch (liveErr: any) {
-          if (liveErr?.message?.includes('No smart contract found') || liveErr?.message?.includes('EOA')) {
-            setTxStatus('Notice: Specified address is an EOA wallet, not a deployed contract. Falling back to local Zero-Trust Ledger (no MetaMask prompt)...');
-            result = await executeDemoAuditLog(assetId, userRole, walletAddress, {
-              sha256Digest: encryptedPayload?.sha256Hash,
-              customProvider: activeWalletProvider,
-            });
-            isRealOnChain = false;
-          } else {
-            throw liveErr;
-          }
-        }
-      } else {
-        setTxStatus(`Recording to Sentinel Zero-Trust Ledger (Off-Chain Demo Mode, no contract address provided)...`);
-        result = await executeDemoAuditLog(assetId, userRole, walletAddress, {
-          sha256Digest: encryptedPayload?.sha256Hash,
-          customProvider: activeWalletProvider,
-        });
-        isRealOnChain = false;
-      }
+      setTxStatus(`Broadcasting real transaction as [${userRole}] to Polygon Amoy...`);
+      const result = await executeContractAccessLog(contractAddress, assetId, userRole, {
+        sha256Digest: encryptedPayload?.sha256Hash,
+        targetAddress: walletAddress,
+        customProvider: activeWalletProvider,
+      });
 
       setTelemetry((prev) => ({
         ...prev,
@@ -494,20 +479,9 @@ export default function Home() {
       }));
 
       const activeDid = userDID || generateDID(walletAddress);
-      let successMsg: string;
-
-      if (isRealOnChain) {
-        if (result.actionType === 'NFT Minted' && result.tokenId) {
-          successMsg = `Success: Real Asset NFT #${result.tokenId} minted on Polygon Amoy & bound to DID [${formatDID(activeDid)}]! Tx: ${result.txHash.slice(0, 18)}...`;
-        } else {
-          successMsg = `Success: Real transaction confirmed on Polygon Amoy (Block #${result.blockNumber})! Tx: ${result.txHash.slice(0, 18)}...`;
-        }
-      } else {
-        if (result.actionType === 'NFT Minted' && result.tokenId) {
-          successMsg = `Off-Chain Verification: Asset NFT #${result.tokenId} registered in local Zero-Trust Ledger bound to DID [${formatDID(activeDid)}]. (Notice: No smart contract address was connected; MetaMask was not prompted). Tx: ${result.txHash.slice(0, 18)}...`;
-        } else {
-          successMsg = `Off-Chain Verification: Access logged in local Zero-Trust Ledger. (Notice: No smart contract address was connected; MetaMask was not prompted). Tx: ${result.txHash.slice(0, 18)}...`;
-        }
+      let successMsg = `Success: Real transaction confirmed on Polygon Amoy (Block #${result.blockNumber})! Tx: ${result.txHash.slice(0, 18)}...`;
+      if (result.actionType === 'NFT Minted' && result.tokenId) {
+        successMsg = `Success: Unique Asset NFT #${result.tokenId} minted on-chain & bound to DID [${formatDID(activeDid)}]! Tx: ${result.txHash.slice(0, 18)}...`;
       }
       setTxStatus(successMsg);
 
@@ -520,7 +494,7 @@ export default function Home() {
         txHash: result.txHash,
         gasUsed: result.gasUsed,
         blockNumber: result.blockNumber,
-        status: isRealOnChain ? 'Verified' : 'Simulated (Off-Chain)',
+        status: 'Verified',
         actionType: result.actionType,
         tokenId: result.tokenId,
         did: activeDid,
@@ -654,24 +628,13 @@ export default function Home() {
       fetchContractStats();
     } catch (err: any) {
       console.error('Deployment error:', err);
-      const rawMsg = err?.info?.error?.message || err?.error?.message || err?.data?.message || err?.message || '';
-      const shortMsg = err?.shortMessage || '';
-      const combined = `${rawMsg} ${shortMsg} ${err?.message || ''}`.toLowerCase();
-
-      if (combined.includes('insufficient funds') || combined.includes('insufficient_funds') || combined.includes('exceeds balance')) {
-        setTxStatus(
-          rawMsg.includes('INSUFFICIENT_FUNDS:')
-            ? rawMsg
-            : 'Error: Insufficient POL testnet balance. Deploying the smart contract requires ~0.15–0.20 POL for gas on Polygon Amoy. Please claim more POL from the faucet link below.'
-        );
-      } else if (err?.code === 'ACTION_REJECTED' || err?.code === 4001 || combined.includes('user rejected') || combined.includes('cancelled')) {
+      const errMsg = err?.message || '';
+      if (errMsg.includes('INSUFFICIENT_FUNDS')) {
+        setTxStatus('Error: Insufficient POL testnet balance to deploy contract. Claim free testnet POL from the faucet link below.');
+      } else if (err?.code === 'ACTION_REJECTED' || err?.code === 4001) {
         setTxStatus('Deployment transaction was cancelled in your wallet.');
-      } else if (shortMsg === 'could not coalesce error') {
-        setTxStatus(
-          'Deployment Failed: Transaction was rejected by your wallet or RPC node (typically because wallet balance < 0.15 POL needed for contract deployment gas, or custom gas fees). Please claim at least 0.25 POL from the faucet.'
-        );
       } else {
-        setTxStatus(`Deployment Failed: ${shortMsg || rawMsg || 'Failed to deploy contract.'}`);
+        setTxStatus(`Deployment Failed: ${err?.shortMessage || errMsg || 'Failed to deploy contract.'}`);
       }
     } finally {
       setIsDeploying(false);

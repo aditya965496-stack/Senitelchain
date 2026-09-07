@@ -84,7 +84,7 @@ export async function switchOrAddPolygonAmoy(customProvider?: any): Promise<bool
               chainId: POLYGON_AMOY_CHAIN_ID_HEX,
               chainName: 'Polygon Amoy Testnet',
               nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
-              rpcUrls: ['https://polygon-amoy-bor-rpc.publicnode.com', 'https://polygon-amoy.drpc.org'],
+              rpcUrls: ['https://polygon-amoy.drpc.org', 'https://rpc-amoy.polygon.technology/'],
               blockExplorerUrls: ['https://amoy.polygonscan.com/'],
             },
           ],
@@ -142,29 +142,14 @@ export async function deploySentinelRegistry(customProvider?: any): Promise<{ ad
   const signerAddress = await signer.getAddress();
 
   const balance = await provider.getBalance(signerAddress);
-  const minRequired = ethers.parseEther('0.15');
-  if (balance < minRequired) {
-    const balFormatted = parseFloat(ethers.formatEther(balance)).toFixed(4);
+  if (balance === 0n) {
     throw new Error(
-      `INSUFFICIENT_FUNDS: Wallet ${signerAddress.slice(0, 6)}...${signerAddress.slice(-4)} currently has ${balFormatted} POL on Polygon Amoy. Deploying the SentinelAuditRegistry contract requires ~0.15–0.20 POL for network gas. Please claim additional testnet POL from https://faucet.polygon.technology/ or https://www.alchemy.com/faucets/polygon-amoy before deploying.`
+      `INSUFFICIENT_FUNDS: Wallet ${signerAddress.slice(0, 6)}...${signerAddress.slice(-4)} has 0 POL on Polygon Amoy. Claim free testnet POL from https://faucet.polygon.technology/ to deploy contracts.`
     );
   }
 
-  // Polygon Amoy Bor consensus requires maxPriorityFeePerGas >= 30 Gwei
-  const feeData = await provider.getFeeData();
-  const minPriorityFee = ethers.parseUnits('30', 'gwei');
-  const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriorityFee
-    ? feeData.maxPriorityFeePerGas
-    : minPriorityFee;
-  const maxFeePerGas = feeData.maxFeePerGas && feeData.maxFeePerGas > maxPriorityFeePerGas
-    ? feeData.maxFeePerGas
-    : maxPriorityFeePerGas + ethers.parseUnits('5', 'gwei');
-
   const factory = new ethers.ContractFactory(registryArtifact.abi, registryArtifact.bytecode, signer);
-  const contract = await factory.deploy({
-    maxPriorityFeePerGas,
-    maxFeePerGas,
-  });
+  const contract = await factory.deploy();
   await contract.waitForDeployment();
 
   const address = await contract.getAddress();
@@ -226,17 +211,6 @@ export async function executeContractAccessLog(
     );
   }
 
-  // Calculate safe Polygon Amoy EIP-1559 gas overrides (30 Gwei Bor minimum)
-  const feeData = await provider.getFeeData();
-  const minPriorityFee = ethers.parseUnits('30', 'gwei');
-  const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriorityFee
-    ? feeData.maxPriorityFeePerGas
-    : minPriorityFee;
-  const maxFeePerGas = feeData.maxFeePerGas && feeData.maxFeePerGas > maxPriorityFeePerGas
-    ? feeData.maxFeePerGas
-    : maxPriorityFeePerGas + ethers.parseUnits('5', 'gwei');
-  const txOverrides = { maxPriorityFeePerGas, maxFeePerGas };
-
   const contract = new ethers.Contract(validAddress, CONTRACT_ABI, signer);
   const cleanAssetId = assetId.trim();
   const digest = options?.sha256Digest || ('0x' + 'f'.repeat(64));
@@ -262,24 +236,24 @@ export async function executeContractAccessLog(
     if (!isAlreadyMinted) {
       actionType = 'NFT Minted';
       try {
-        tx = await contract.mintAssetNFT(recipient, recipientDid, cleanAssetId, digest, tokenUri, txOverrides);
+        tx = await contract.mintAssetNFT(recipient, recipientDid, cleanAssetId, digest, tokenUri);
       } catch (mintErr: any) {
         console.warn('mintAssetNFT failed or unavailable, executing verified access log:', mintErr);
         actionType = 'Access Verified';
-        tx = await contract.verifyAndLogAccess(cleanAssetId, txOverrides);
+        tx = await contract.verifyAndLogAccess(cleanAssetId);
       }
     } else {
       // CID already exists as an NFT, verify and record access log
       actionType = 'Access Verified';
-      tx = await contract.verifyAndLogAccess(cleanAssetId, txOverrides);
+      tx = await contract.verifyAndLogAccess(cleanAssetId);
     }
   } else if (userRole.includes('Manager')) {
     actionType = 'Asset Allocated';
-    tx = await contract.verifyAndLogAccess(cleanAssetId, txOverrides);
+    tx = await contract.verifyAndLogAccess(cleanAssetId);
   } else {
     // Regular User
     actionType = 'Access Verified';
-    tx = await contract.verifyAndLogAccess(cleanAssetId, txOverrides);
+    tx = await contract.verifyAndLogAccess(cleanAssetId);
   }
 
   // Wait for real on-chain confirmation
@@ -451,17 +425,7 @@ export async function reallocateAssetNFTOnChain(
   const signer = await provider.getSigner();
   const contract = new ethers.Contract(validContract, CONTRACT_ABI, signer);
 
-  const feeData = await provider.getFeeData();
-  const minPriorityFee = ethers.parseUnits('30', 'gwei');
-  const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriorityFee
-    ? feeData.maxPriorityFeePerGas
-    : minPriorityFee;
-  const maxFeePerGas = feeData.maxFeePerGas && feeData.maxFeePerGas > maxPriorityFeePerGas
-    ? feeData.maxFeePerGas
-    : maxPriorityFeePerGas + ethers.parseUnits('5', 'gwei');
-  const txOverrides = { maxPriorityFeePerGas, maxFeePerGas };
-
-  const tx = await contract.allocateAssetNFT(tokenId, validNewOwner, targetDid, txOverrides);
+  const tx = await contract.allocateAssetNFT(tokenId, validNewOwner, targetDid);
   const receipt = await tx.wait();
 
   if (!receipt || receipt.status !== 1) {
@@ -498,17 +462,7 @@ export async function toggleContractCircuitBreaker(
   const signer = await provider.getSigner();
   const contract = new ethers.Contract(validContract, CONTRACT_ABI, signer);
 
-  const feeData = await provider.getFeeData();
-  const minPriorityFee = ethers.parseUnits('30', 'gwei');
-  const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriorityFee
-    ? feeData.maxPriorityFeePerGas
-    : minPriorityFee;
-  const maxFeePerGas = feeData.maxFeePerGas && feeData.maxFeePerGas > maxPriorityFeePerGas
-    ? feeData.maxFeePerGas
-    : maxPriorityFeePerGas + ethers.parseUnits('5', 'gwei');
-  const txOverrides = { maxPriorityFeePerGas, maxFeePerGas };
-
-  const tx = await contract.setPaused(pauseState, txOverrides);
+  const tx = await contract.setPaused(pauseState);
   const receipt = await tx.wait();
 
   if (!receipt || receipt.status !== 1) {
@@ -518,54 +472,5 @@ export async function toggleContractCircuitBreaker(
   return {
     txHash: receipt.hash,
     isPaused: pauseState,
-  };
-}
-
-export const DEMO_REGISTRY_ADDRESS = '0x71C94bC817D1Ff8902898B677A016dAf3460A9C1';
-
-/**
- * Verifiable Zero-Trust Demo Execution:
- * When no live smart contract is deployed on Polygon Amoy, executes cryptographic
- * DID signature verification with real wallet keys, calculates real gas estimates,
- * and records a tamper-proof audit trail.
- */
-export async function executeDemoAuditLog(
-  assetId: string,
-  userRole: UserRole,
-  walletAddress: string,
-  options?: {
-    sha256Digest?: string;
-    customProvider?: any;
-  }
-): Promise<TxExecutionResult> {
-  const activeEth = getActiveInjectedProvider(options?.customProvider);
-  const provider = activeEth ? new ethers.BrowserProvider(activeEth) : null;
-  let blockNumber = 46971500;
-  if (provider) {
-    try {
-      blockNumber = await provider.getBlockNumber();
-    } catch {}
-  }
-
-  const did = generateDID(walletAddress);
-  const actionType: TxExecutionResult['actionType'] = userRole.includes('Admin')
-    ? 'NFT Minted'
-    : userRole.includes('Manager')
-    ? 'Asset Allocated'
-    : 'Access Verified';
-
-  const mockTxBytes = ethers.randomBytes(32);
-  const txHash = ethers.hexlify(mockTxBytes);
-  const tokenId = actionType === 'NFT Minted' ? Math.floor(1000 + Math.random() * 9000) : undefined;
-  const gasUsedNum = Math.floor(48000 + Math.random() * 12000);
-
-  return {
-    success: true,
-    txHash,
-    blockNumber,
-    gasUsed: `${gasUsedNum.toLocaleString()} gas units`,
-    actionType,
-    tokenId,
-    did,
   };
 }

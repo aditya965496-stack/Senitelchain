@@ -89,30 +89,6 @@ async function runTestSuite() {
   }
   assert(isTamperDetected, 'Tampered authentication challenge is rejected by signature verifier');
 
-  // Test EIP-4361 Sign-In with Ethereum (SIWE) Challenge & Signature Recovery
-  const siweChallenge = [
-    'localhost:3000 wants you to sign in with your Ethereum account:',
-    wallet.address,
-    '',
-    'Sign in to SentinelChain Enterprise Zero-Trust Portal under Admin (Issuer) role.',
-    '',
-    'URI: http://localhost:3000',
-    'Version: 1',
-    `Chain ID: 80002`,
-    `Nonce: siwe-nonce-${Date.now()}`,
-    `Issued At: ${new Date().toISOString()}`,
-    'Resources:',
-    `- ${did}`,
-    '- urn:sentinel:role:Admin_(Issuer)',
-  ].join('\n');
-
-  const siweSig = await wallet.signMessage(siweChallenge);
-  const recoveredSiweAddress = ethers.verifyMessage(siweChallenge, siweSig);
-  assert(
-    recoveredSiweAddress.toLowerCase() === wallet.address.toLowerCase(),
-    'EIP-4361 SIWE challenge signed and recovered, eliminating MetaMask Blockaid deception warnings'
-  );
-
   // Test EIP-712 Typed Structured Data Signing (Zero-Warning Auth)
   const eip712Domain = {
     name: 'SentinelChain Enterprise',
