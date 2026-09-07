@@ -456,32 +456,36 @@ export default function Home() {
       );
 
       let result: TxExecutionResult;
+      let isRealOnChain = false;
 
       if (hasLiveContract) {
-        setTxStatus(`Broadcasting real transaction as [${userRole}] to Polygon Amoy...`);
+        setTxStatus(`Broadcasting real transaction as [${userRole}] to Polygon Amoy via MetaMask...`);
         try {
           result = await executeContractAccessLog(contractAddress, assetId, userRole, {
             sha256Digest: encryptedPayload?.sha256Hash,
             targetAddress: walletAddress,
             customProvider: activeWalletProvider,
           });
+          isRealOnChain = true;
         } catch (liveErr: any) {
           if (liveErr?.message?.includes('No smart contract found') || liveErr?.message?.includes('EOA')) {
-            setTxStatus('Notice: Specified address is not a deployed contract. Executing verifiable audit log via Sentinel Zero-Trust Ledger...');
+            setTxStatus('Notice: Specified address is an EOA wallet, not a deployed contract. Falling back to local Zero-Trust Ledger (no MetaMask prompt)...');
             result = await executeDemoAuditLog(assetId, userRole, walletAddress, {
               sha256Digest: encryptedPayload?.sha256Hash,
               customProvider: activeWalletProvider,
             });
+            isRealOnChain = false;
           } else {
             throw liveErr;
           }
         }
       } else {
-        setTxStatus(`Executing verifiable cryptographic audit log via Sentinel Zero-Trust Ledger as [${userRole}]...`);
+        setTxStatus(`Recording to Sentinel Zero-Trust Ledger (Off-Chain Demo Mode, no contract address provided)...`);
         result = await executeDemoAuditLog(assetId, userRole, walletAddress, {
           sha256Digest: encryptedPayload?.sha256Hash,
           customProvider: activeWalletProvider,
         });
+        isRealOnChain = false;
       }
 
       setTelemetry((prev) => ({
@@ -490,9 +494,20 @@ export default function Home() {
       }));
 
       const activeDid = userDID || generateDID(walletAddress);
-      let successMsg = `Success: Real transaction confirmed on Polygon Amoy (Block #${result.blockNumber})! Tx: ${result.txHash.slice(0, 18)}...`;
-      if (result.actionType === 'NFT Minted' && result.tokenId) {
-        successMsg = `Success: Unique Asset NFT #${result.tokenId} minted on-chain & bound to DID [${formatDID(activeDid)}]! Tx: ${result.txHash.slice(0, 18)}...`;
+      let successMsg: string;
+
+      if (isRealOnChain) {
+        if (result.actionType === 'NFT Minted' && result.tokenId) {
+          successMsg = `Success: Real Asset NFT #${result.tokenId} minted on Polygon Amoy & bound to DID [${formatDID(activeDid)}]! Tx: ${result.txHash.slice(0, 18)}...`;
+        } else {
+          successMsg = `Success: Real transaction confirmed on Polygon Amoy (Block #${result.blockNumber})! Tx: ${result.txHash.slice(0, 18)}...`;
+        }
+      } else {
+        if (result.actionType === 'NFT Minted' && result.tokenId) {
+          successMsg = `Off-Chain Verification: Asset NFT #${result.tokenId} registered in local Zero-Trust Ledger bound to DID [${formatDID(activeDid)}]. (Notice: No smart contract address was connected; MetaMask was not prompted). Tx: ${result.txHash.slice(0, 18)}...`;
+        } else {
+          successMsg = `Off-Chain Verification: Access logged in local Zero-Trust Ledger. (Notice: No smart contract address was connected; MetaMask was not prompted). Tx: ${result.txHash.slice(0, 18)}...`;
+        }
       }
       setTxStatus(successMsg);
 
@@ -505,7 +520,7 @@ export default function Home() {
         txHash: result.txHash,
         gasUsed: result.gasUsed,
         blockNumber: result.blockNumber,
-        status: 'Verified',
+        status: isRealOnChain ? 'Verified' : 'Simulated (Off-Chain)',
         actionType: result.actionType,
         tokenId: result.tokenId,
         did: activeDid,
