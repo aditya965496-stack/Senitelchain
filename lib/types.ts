@@ -30,6 +30,21 @@ export interface EncryptedPayload {
   encryptedBuffer: ArrayBuffer;
 }
 
+export interface StoredSealedAsset {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  encryptedBytes: number;
+  sha256Hash: string;
+  ciphertextHex: string;
+  rawCiphertextHex: string;
+  ivHex: string;
+  keyHex: string;
+  pinnedCid?: string;
+  timestamp: string;
+}
+
 export interface IPFSResponse {
   cid: string;
   size: number;

@@ -177,6 +177,100 @@ async function runTestSuite() {
   assert(decryptedText === sampleData.toString('utf8'), 'Decrypted plaintext exactly matches original source payload');
 
   // ==========================================
+  // Test Suite 3B: Persistent Vault & Post-Logout Decryption via CIPHERTEXT / IPFS Storage CID
+  // ==========================================
+  console.log('\n--- SUITE 3B: Persistent Vault & Post-Logout Decryption ---');
+
+  // 1. Test Key Export and Import (Raw 256-bit Hex)
+  const rawKeyBuffer = await globalThis.crypto.subtle.exportKey('raw', key);
+  const keyHex = Array.from(new Uint8Array(rawKeyBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  assert(keyHex.length === 64, 'Exports 256-bit AES-GCM raw key to 64-character hex string');
+
+  const importedKeyBytes = new Uint8Array(keyHex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16)));
+  const importedKey = await globalThis.crypto.subtle.importKey(
+    'raw',
+    importedKeyBytes,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+  assert(importedKey !== null && importedKey.algorithm.name === 'AES-GCM', 'Imports raw hex back into valid AES-GCM CryptoKey');
+
+  // 2. Test StoredSealedAsset Envelope Serialization
+  const rawCipherHex = Array.from(new Uint8Array(encryptedBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const ivHex = Array.from(iv).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const testCid = 'bafybeih8392fb1039d91028sentinel';
+
+  const sealedAsset = {
+    id: `sealed-test-${Date.now()}`,
+    fileName: 'confidential_contract.pdf',
+    mimeType: 'text/plain',
+    sizeBytes: sampleData.length,
+    encryptedBytes: encryptedBuffer.byteLength,
+    sha256Hash: `0x${digestHex}`,
+    ciphertextHex: `0x${rawCipherHex.slice(0, 64)}...`,
+    rawCiphertextHex: `0x${rawCipherHex}`,
+    ivHex: `0x${ivHex}`,
+    keyHex,
+    pinnedCid: testCid,
+    timestamp: new Date().toISOString(),
+  };
+
+  // 3. Test Credential Matcher (Ciphertext exact, truncated with dots, IPFS CID, SHA-256)
+  function matchesSealedCredential(asset, input) {
+    if (!input || typeof input !== 'string') return false;
+    const rawInput = input.trim();
+    if (rawInput.length < 5) return false;
+    const clean = rawInput.toLowerCase().replace(/\.+$/, '').trim();
+    const cleanNoHex = clean.startsWith('0x') ? clean.slice(2) : clean;
+
+    if (asset.pinnedCid) {
+      const cleanCid = asset.pinnedCid.toLowerCase().trim();
+      if (clean === cleanCid || cleanCid.includes(clean) || clean.includes(cleanCid)) return true;
+    }
+
+    const rawCipher = (asset.rawCiphertextHex || '').toLowerCase().trim();
+    const rawCipherNoHex = rawCipher.startsWith('0x') ? rawCipher.slice(2) : rawCipher;
+    const displayCipher = (asset.ciphertextHex || '').toLowerCase().replace(/\.+$/, '').trim();
+    const displayCipherNoHex = displayCipher.startsWith('0x') ? displayCipher.slice(2) : displayCipher;
+
+    if (
+      (rawCipher && (rawCipher.includes(clean) || clean.includes(rawCipher))) ||
+      (rawCipherNoHex && cleanNoHex.length >= 8 && (rawCipherNoHex.includes(cleanNoHex) || cleanNoHex.includes(rawCipherNoHex))) ||
+      (displayCipher && (displayCipher.includes(clean) || clean.includes(displayCipher))) ||
+      (displayCipherNoHex && cleanNoHex.length >= 8 && (displayCipherNoHex.includes(cleanNoHex) || cleanNoHex.includes(displayCipherNoHex)))
+    ) {
+      return true;
+    }
+
+    if (asset.sha256Hash) {
+      const cleanSha = asset.sha256Hash.toLowerCase().trim();
+      const cleanShaNoHex = cleanSha.startsWith('0x') ? cleanSha.slice(2) : cleanSha;
+      if (clean === cleanSha || cleanNoHex === cleanShaNoHex || (cleanNoHex.length >= 12 && cleanShaNoHex.includes(cleanNoHex))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  assert(matchesSealedCredential(sealedAsset, `0x${rawCipherHex}`), 'Matches via full raw CIPHERTEXT (0x...)');
+  assert(matchesSealedCredential(sealedAsset, sealedAsset.ciphertextHex), 'Matches via truncated display CIPHERTEXT with dots (...)');
+  assert(matchesSealedCredential(sealedAsset, testCid), 'Matches via IPFS Storage CID (bafy...)');
+  assert(matchesSealedCredential(sealedAsset, `0x${digestHex}`), 'Matches via SHA-256 integrity checksum');
+  assert(!matchesSealedCredential(sealedAsset, '0xInvalidCiphertext12345678'), 'Rejects non-matching credential input');
+
+  // 4. Test Post-Logout Restoration & Decryption using only the sealed envelope
+  const restoredCipherBytes = new Uint8Array(sealedAsset.rawCiphertextHex.slice(2).match(/.{1,2}/g).map((byte) => parseInt(byte, 16)));
+  const restoredIvBytes = new Uint8Array(sealedAsset.ivHex.slice(2).match(/.{1,2}/g).map((byte) => parseInt(byte, 16)));
+  const restoredDecryptedBuffer = await globalThis.crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: restoredIvBytes },
+    importedKey,
+    restoredCipherBytes.buffer
+  );
+  const restoredText = Buffer.from(restoredDecryptedBuffer).toString('utf8');
+  assert(restoredText === sampleData.toString('utf8'), 'Successfully decrypts sealed asset post-logout without active session');
+
+  // ==========================================
   // Test Suite 4: Security Sanitization & CSV Formula Protection
   // ==========================================
   console.log('\n--- SUITE 4: Security Sanitization & CSV Injection Defense ---');

@@ -11,7 +11,14 @@ import {
   DIDDocument,
   AssetNFT,
 } from '@/lib/types';
-import { encryptFilePayload, decryptPayload, DecryptionVerification } from '@/lib/crypto';
+import {
+  encryptFilePayload,
+  decryptPayload,
+  DecryptionVerification,
+  sealedAssetFromPayload,
+  saveSealedAssetToVault,
+  updateSealedAssetCidInVault,
+} from '@/lib/crypto';
 import { pinToIpfs } from '@/lib/ipfs';
 import {
   generateDID,
@@ -317,7 +324,7 @@ export default function Home() {
     setDidDocument(null);
     setIsAuthenticated(false);
     setVerifiedOnChainRole('');
-    setTxStatus('Secure session terminated. Local cryptographic context purged.');
+    setTxStatus('Wallet disconnected. Sealed files remain accessible via CIPHERTEXT or IPFS Storage CID.');
   };
 
   // File Upload
@@ -351,6 +358,19 @@ export default function Home() {
       setTxStatus(`Executing client-side AES-256-GCM encryption on "${selectedFile.name}"...`);
       const payload = await encryptFilePayload(selectedFile);
       setEncryptedPayload(payload);
+
+      // Persist sealed asset envelope across sessions & post-logout
+      try {
+        const sealedAsset = await sealedAssetFromPayload(payload);
+        saveSealedAssetToVault(sealedAsset);
+        fetch('/api/sealed-assets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sealedAsset),
+        }).catch(() => {});
+      } catch (vaultErr) {
+        console.warn('Vault storage notice:', vaultErr);
+      }
 
       setTelemetry((prev) => ({
         ...prev,
@@ -388,6 +408,23 @@ export default function Home() {
     }
   };
 
+  // Restore and verify sealed payload from persistent vault or backend
+  const handleRestoreSealedPayload = (
+    payload: EncryptedPayload,
+    cid?: string,
+    verification?: DecryptionVerification
+  ) => {
+    setEncryptedPayload(payload);
+    if (cid) {
+      setPinnedCid(cid);
+      setAssetId(cid);
+    }
+    if (verification) {
+      setDecryptedResult(verification);
+    }
+    setTxStatus(`Restored and verified sealed file "${payload.originalName}" via cryptographic credential!`);
+  };
+
   // Pin to IPFS & Generate NFT Metadata
   const handlePinIPFS = async () => {
     if (userRole.includes('Auditor')) {
@@ -410,6 +447,18 @@ export default function Home() {
 
       setPinnedCid(ipfsRes.cid);
       setAssetId(ipfsRes.cid);
+
+      // Sync updated CID with persistent vault
+      try {
+        updateSealedAssetCidInVault(encryptedPayload.sha256Hash, ipfsRes.cid);
+        const updatedAsset = await sealedAssetFromPayload(encryptedPayload, ipfsRes.cid);
+        fetch('/api/sealed-assets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedAsset),
+        }).catch(() => {});
+      } catch {}
+
       const clusterNotice = ipfsRes.isPinataPinned ? ' [Pinned to Pinata IPFS Cluster]' : '';
       setTxStatus(`Storage synchronization successful under [${userRole}]. IPFS CID: ${ipfsRes.cid}${clusterNotice}`);
     } catch (err: any) {
@@ -698,6 +747,7 @@ export default function Home() {
               onPinIPFS={handlePinIPFS}
               onVerifyDecrypt={handleVerifyDecrypt}
               onLockFile={() => setDecryptedResult(null)}
+              onRestoreSealedPayload={handleRestoreSealedPayload}
             />
           </div>
 

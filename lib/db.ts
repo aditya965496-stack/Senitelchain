@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import type { StoredIdentity, AssetNFT, AuditRecord, UserRole } from './types';
+import type { StoredIdentity, AssetNFT, AuditRecord, UserRole, StoredSealedAsset } from './types';
+import { matchesSealedCredential } from './crypto';
 
 export interface DatabaseSchema {
   version: string;
@@ -8,6 +9,7 @@ export interface DatabaseSchema {
   identities: Record<string, StoredIdentity>; // keyed by lowercase address
   nfts: AssetNFT[];
   auditRecords: AuditRecord[];
+  sealedAssets?: StoredSealedAsset[];
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -51,6 +53,7 @@ function getInitialSeedData(): DatabaseSchema {
         explorerUrl: 'https://amoy.polygonscan.com/tx/0x4e8d356c9a784bb5f2a1b9c3e7d5f8a2b4c6e9d1a3b5c7e9f1a3b5c7e9f1a3b5',
       },
     ],
+    sealedAssets: [],
   };
 }
 
@@ -61,6 +64,7 @@ let inMemoryCache: DatabaseSchema | null = null;
  */
 function loadDatabase(): DatabaseSchema {
   if (inMemoryCache) {
+    if (!inMemoryCache.sealedAssets) inMemoryCache.sealedAssets = [];
     return inMemoryCache;
   }
 
@@ -72,6 +76,7 @@ function loadDatabase(): DatabaseSchema {
     if (fs.existsSync(DB_FILE)) {
       const content = fs.readFileSync(DB_FILE, 'utf8');
       inMemoryCache = JSON.parse(content);
+      if (!inMemoryCache!.sealedAssets) inMemoryCache!.sealedAssets = [];
       return inMemoryCache!;
     }
   } catch (err) {
@@ -233,6 +238,56 @@ export function listAuditRecords(options?: {
 }
 
 // ==========================================
+// Sealed Asset Operations (Persistent Vault)
+// ==========================================
+
+export function saveSealedAsset(asset: StoredSealedAsset): StoredSealedAsset {
+  const db = loadDatabase();
+  if (!db.sealedAssets) db.sealedAssets = [];
+
+  const existingIndex = db.sealedAssets.findIndex(
+    (a) =>
+      a.sha256Hash.toLowerCase() === asset.sha256Hash.toLowerCase() ||
+      a.rawCiphertextHex.toLowerCase() === asset.rawCiphertextHex.toLowerCase() ||
+      Boolean(a.pinnedCid && asset.pinnedCid && a.pinnedCid.toLowerCase() === asset.pinnedCid.toLowerCase())
+  );
+
+  if (existingIndex >= 0) {
+    db.sealedAssets[existingIndex] = {
+      ...db.sealedAssets[existingIndex],
+      ...asset,
+      pinnedCid: asset.pinnedCid || db.sealedAssets[existingIndex].pinnedCid,
+    };
+  } else {
+    db.sealedAssets.unshift(asset);
+  }
+
+  if (db.sealedAssets.length > 100) {
+    db.sealedAssets = db.sealedAssets.slice(0, 100);
+  }
+
+  persistDatabase(db);
+  return asset;
+}
+
+export function getSealedAssetByQuery(query: string): StoredSealedAsset | null {
+  const db = loadDatabase();
+  if (!db.sealedAssets || db.sealedAssets.length === 0) return null;
+
+  for (const asset of db.sealedAssets) {
+    if (matchesSealedCredential(asset, query)) {
+      return asset;
+    }
+  }
+  return null;
+}
+
+export function listSealedAssets(): StoredSealedAsset[] {
+  const db = loadDatabase();
+  return db.sealedAssets || [];
+}
+
+// ==========================================
 // System Stats
 // ==========================================
 
@@ -242,6 +297,7 @@ export function getDatabaseStats() {
     totalIdentities: Object.keys(db.identities).length,
     totalNFTs: db.nfts.length,
     totalAuditRecords: db.auditRecords.length,
+    totalSealedAssets: db.sealedAssets?.length || 0,
     lastUpdated: db.updatedAt,
   };
 }

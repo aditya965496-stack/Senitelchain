@@ -1,6 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { EncryptedPayload, UserRole } from '@/lib/types';
-import { DecryptionVerification } from '@/lib/crypto';
+import { EncryptedPayload, UserRole, StoredSealedAsset } from '@/lib/types';
+import {
+  DecryptionVerification,
+  matchesSealedCredential,
+  getSealedAssetFromVault,
+  saveSealedAssetToVault,
+  payloadFromSealedAsset,
+  decryptPayload,
+} from '@/lib/crypto';
 import {
   LockIcon,
   UnlockIcon,
@@ -25,6 +32,7 @@ interface IngestionGatewayProps {
   onPinIPFS: () => void;
   onVerifyDecrypt: () => void;
   onLockFile?: () => void;
+  onRestoreSealedPayload?: (payload: EncryptedPayload, cid?: string, result?: DecryptionVerification) => void;
 }
 
 export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
@@ -39,10 +47,12 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
   onPinIPFS,
   onVerifyDecrypt,
   onLockFile,
+  onRestoreSealedPayload,
 }) => {
   const isAuditor = userRole.includes('Auditor');
   const [unlockKey, setUnlockKey] = useState('');
   const [unlockError, setUnlockError] = useState('');
+  const [isUnlocking, setIsUnlocking] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const handleCopy = (text: string, field: string) => {
@@ -61,36 +71,83 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
     }
   }, [encryptedPayload]);
 
-  const handleUnlockAndDecrypt = () => {
-    if (!encryptedPayload) return;
+  const handleUnlockAndDecrypt = async () => {
     const input = unlockKey.trim();
     if (!input) {
-      setUnlockError('Please enter the Ciphertext or IPFS Storage CID to unlock this file.');
+      setUnlockError('Please enter the CIPHERTEXT or IPFS Storage CID to unlock this file.');
       return;
     }
 
-    const cleanInput = input.toLowerCase().trim();
-    const rawCipher = (encryptedPayload.rawCiphertextHex || '').toLowerCase();
-    const displayCipher = encryptedPayload.ciphertextHex.toLowerCase().replace('...', '').trim();
-    const cid = (pinnedCID || '').toLowerCase().trim();
-    const sha = encryptedPayload.sha256Hash.toLowerCase().trim();
+    setIsUnlocking(true);
+    setUnlockError('');
 
-    // Verification check: matches Ciphertext (full or prefix), IPFS Storage CID, or SHA-256
-    const isCipherMatch =
-      cleanInput.length >= 10 &&
-      (rawCipher.includes(cleanInput) ||
-       cleanInput.includes(displayCipher) ||
-       displayCipher.includes(cleanInput.replace('...', '')) ||
-       (cleanInput.startsWith('0x') ? rawCipher.startsWith(cleanInput) : rawCipher.startsWith(`0x${cleanInput}`)));
+    try {
+      // 1. If encryptedPayload is currently in memory, check if credential matches
+      if (encryptedPayload) {
+        const matchesCurrent = matchesSealedCredential(
+          {
+            rawCiphertextHex: encryptedPayload.rawCiphertextHex,
+            ciphertextHex: encryptedPayload.ciphertextHex,
+            sha256Hash: encryptedPayload.sha256Hash,
+            pinnedCid: pinnedCID,
+          },
+          input
+        );
 
-    const isCidMatch = Boolean(cid && (cleanInput === cid || cleanInput.includes(cid) || cid.includes(cleanInput)));
-    const isShaMatch = cleanInput === sha || cleanInput === sha.replace('0x', '') || sha.includes(cleanInput);
+        if (matchesCurrent) {
+          setUnlockError('');
+          await onVerifyDecrypt();
+          setIsUnlocking(false);
+          return;
+        }
+      }
 
-    if (isCipherMatch || isCidMatch || isShaMatch) {
-      setUnlockError('');
-      onVerifyDecrypt();
-    } else {
-      setUnlockError('Access Denied: The entered credential does not match the file\'s Ciphertext or IPFS Storage CID. File remains locked.');
+      // 2. Lookup in client-side persistent vault (localStorage)
+      let matchedAsset: StoredSealedAsset | null = getSealedAssetFromVault(input);
+
+      // 3. Fallback: Lookup in backend persistent database (/api/sealed-assets)
+      if (!matchedAsset) {
+        try {
+          const res = await fetch(`/api/sealed-assets?q=${encodeURIComponent(input)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.asset) {
+              const fetchedAsset: StoredSealedAsset = data.asset;
+              matchedAsset = fetchedAsset;
+              saveSealedAssetToVault(fetchedAsset);
+            }
+          }
+        } catch (apiErr) {
+          console.warn('Could not query backend sealed assets:', apiErr);
+        }
+      }
+
+      if (matchedAsset) {
+        const restoredPayload = await payloadFromSealedAsset(matchedAsset);
+        const verification = await decryptPayload(
+          restoredPayload.encryptedBuffer,
+          restoredPayload.cryptoKey,
+          restoredPayload.iv,
+          matchedAsset.mimeType || 'application/octet-stream'
+        );
+
+        if (onRestoreSealedPayload) {
+          onRestoreSealedPayload(restoredPayload, matchedAsset.pinnedCid, verification);
+        }
+        setUnlockError('');
+        setIsUnlocking(false);
+        return;
+      }
+
+      // If no matching asset could be found
+      setUnlockError(
+        "Access Denied: The entered credential does not match the file's CIPHERTEXT or IPFS Storage CID. File remains locked."
+      );
+    } catch (err: any) {
+      console.error('Unlock error:', err);
+      setUnlockError(`Verification failed: ${err.message || 'Decryption error'}`);
+    } finally {
+      setIsUnlocking(false);
     }
   };
 
@@ -306,11 +363,11 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
               <button
                 type="button"
                 onClick={handleUnlockAndDecrypt}
-                disabled={isProcessing}
+                disabled={isProcessing || isUnlocking}
                 className="text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-40 shrink-0"
               >
                 <UnlockIcon className="w-3.5 h-3.5 text-white" />
-                <span>Verify Decrypt & Integrity</span>
+                <span>{isUnlocking ? 'Verifying...' : 'Verify Decrypt & Integrity'}</span>
               </button>
             </div>
 
@@ -322,6 +379,57 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Standalone Access Control when no active in-memory payload is loaded (e.g. post-logout or page reload) */}
+      {!encryptedPayload && !decryptedResult && (
+        <div className="bg-slate-50/80 border border-slate-200/90 rounded-xl p-4 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <LockIcon className="w-3.5 h-3.5 text-slate-700" />
+              <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider">
+                Access Control — Locked File Authorization
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-500 font-medium">
+              Locked by Ciphertext / IPFS
+            </span>
+          </div>
+
+          <p className="text-[11px] text-slate-600 leading-relaxed">
+            This file is locked by the sealed ciphertext and IPFS storage. To access and decrypt the locked file, provide the matching <strong className="text-slate-800">CIPHERTEXT</strong> or <strong className="text-slate-800">IPFS Storage CID</strong>.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={unlockKey}
+              onChange={(e) => {
+                setUnlockKey(e.target.value);
+                if (unlockError) setUnlockError('');
+              }}
+              placeholder="Enter CIPHERTEXT (0x...) or IPFS Storage CID (bafy...)..."
+              className="flex-1 px-3.5 py-2 text-xs font-mono border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-slate-900 transition-all placeholder:text-slate-400 shadow-2xs"
+            />
+            <button
+              type="button"
+              onClick={handleUnlockAndDecrypt}
+              disabled={isProcessing || isUnlocking}
+              className="text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-40 shrink-0"
+            >
+              <UnlockIcon className="w-3.5 h-3.5 text-white" />
+              <span>{isUnlocking ? 'Verifying...' : 'Verify Decrypt & Integrity'}</span>
+            </button>
+          </div>
+
+          {/* Unlock Error Feedback */}
+          {unlockError && (
+            <div className="flex items-center gap-1.5 text-xs text-rose-700 bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl">
+              <AlertCircleIcon className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{unlockError}</span>
+            </div>
+          )}
         </div>
       )}
 
