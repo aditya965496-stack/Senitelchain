@@ -4,11 +4,20 @@ import { SearchIcon, DownloadIcon, ExternalLinkIcon } from './Icons';
 
 interface AuditLedgerTableProps {
   logs: AuditRecord[];
+  isAuthenticated?: boolean;
 }
 
-export const AuditLedgerTable: React.FC<AuditLedgerTableProps> = ({ logs }) => {
+export const AuditLedgerTable: React.FC<AuditLedgerTableProps> = ({ logs, isAuthenticated = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
+
+  // Clear search input when user logs out or disconnects
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      setSearchTerm('');
+      setRoleFilter('All');
+    }
+  }, [isAuthenticated]);
 
   const filteredLogs = logs.filter((log) => {
     const matchesSearch =

@@ -27,6 +27,7 @@ interface IngestionGatewayProps {
   pinnedCID: string;
   decryptedResult: DecryptionVerification | null;
   isProcessing: boolean;
+  isAuthenticated?: boolean;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onEncrypt: () => void;
   onPinIPFS: () => void;
@@ -42,6 +43,7 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
   pinnedCID,
   decryptedResult,
   isProcessing,
+  isAuthenticated = false,
   onFileChange,
   onEncrypt,
   onPinIPFS,
@@ -54,6 +56,18 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
   const [unlockError, setUnlockError] = useState('');
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Clear unlockKey and file input when user logs out or disconnects
+  React.useEffect(() => {
+    if (!isAuthenticated) {
+      setUnlockKey('');
+      setUnlockError('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [isAuthenticated]);
 
   const handleCopy = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -172,6 +186,7 @@ export const IngestionGateway: React.FC<IngestionGatewayProps> = ({
         </label>
         <div className="relative">
           <input
+            ref={fileInputRef}
             type="file"
             disabled={isAuditor || isProcessing}
             onChange={onFileChange}

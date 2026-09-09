@@ -10,6 +10,7 @@ const nextConfig = {
       ...config.resolve.fallback,
       bufferutil: false,
       'utf-8-validate': false,
+      '@base-org/account': false,
     };
     return config;
   },

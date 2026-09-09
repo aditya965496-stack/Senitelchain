@@ -524,6 +524,11 @@ contract SentinelAuditRegistry {
         emit RoleGranted(role, account, msg.sender);
     }
 
+    function assignRole(bytes32 role, address account) external onlyAdmin {
+        _roles[role][account] = true;
+        emit RoleGranted(role, account, msg.sender);
+    }
+
     function revokeRole(bytes32 role, address account) external onlyAdmin {
         _roles[role][account] = false;
         emit RoleRevoked(role, account, msg.sender);

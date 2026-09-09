@@ -37,6 +37,17 @@ export const NFTAssetGallery: React.FC<NFTAssetGalleryProps> = ({
   const [reallocateStatus, setReallocateStatus] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Clear search and form inputs when user logs out or disconnects
+  React.useEffect(() => {
+    if (!currentAddress) {
+      setSearchQuery('');
+      setTargetAddress('');
+      setReallocateTokenId(null);
+      setReallocateStatus('');
+      setFilterMode('all');
+    }
+  }, [currentAddress]);
+
   const canReallocate = userRole.includes('Admin') || userRole.includes('Manager');
 
   const filteredNFTs = nfts.filter((nft) => {

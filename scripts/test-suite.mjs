@@ -385,6 +385,7 @@ async function runTestSuite() {
     'verifyAndLogAccess',
     'hasRole',
     'grantRole',
+    'assignRole',
     'revokeRole',
     'setPaused',
     'paused',
@@ -394,6 +395,38 @@ async function runTestSuite() {
     const found = artifact.abi.some((item) => item.type === 'function' && item.name === method);
     assert(found, `Contract ABI includes required enterprise function: ${method}()`);
   }
+
+  // ==========================================
+  // Test Suite 7: RBAC Role Assignment Component & Policy Verification
+  // ==========================================
+  console.log('\n--- SUITE 7: RBAC Role Assignment Component & Policy Verification ---');
+  const roleCompPath = path.join(__dirname, '..', 'components', 'RoleAssignment.tsx');
+  assert(fs.existsSync(roleCompPath), 'RoleAssignment.tsx component file exists');
+
+  const roleCompSource = fs.readFileSync(roleCompPath, 'utf8');
+  assert(roleCompSource.includes('useWriteContract'), 'Component uses wagmi useWriteContract hook');
+  assert(roleCompSource.includes('assignRole'), 'Component invokes assignRole contract function');
+  assert(roleCompSource.includes('Target Wallet Address'), 'Component includes Target Wallet Address input label');
+  assert(roleCompSource.includes('Select Role'), 'Component includes Select Role dropdown label');
+  assert(
+    roleCompSource.includes('<option value="MANAGER">MANAGER</option>') &&
+    roleCompSource.includes('<option value="AUDITOR">AUDITOR</option>') &&
+    roleCompSource.includes('<option value="USER">USER</option>'),
+    'Component dropdown includes exact options: MANAGER, AUDITOR, USER'
+  );
+  assert(
+    roleCompSource.includes('Access Denied: Only Administrators can assign cryptographic roles.'),
+    'Component strictly enforces exact denial message: "Access Denied: Only Administrators can assign cryptographic roles."'
+  );
+  assert(
+    roleCompSource.includes('useWaitForTransactionReceipt'),
+    'Component uses useWaitForTransactionReceipt to monitor blockchain confirmation'
+  );
+
+  const wagmiConfigPath = path.join(__dirname, '..', 'lib', 'wagmi.ts');
+  assert(fs.existsSync(wagmiConfigPath), 'lib/wagmi.ts configuration file exists');
+  const wagmiConfigContent = fs.readFileSync(wagmiConfigPath, 'utf8');
+  assert(wagmiConfigContent.includes('polygonAmoy'), 'wagmi configured for Polygon Amoy network');
 
   // ==========================================
   // Summary

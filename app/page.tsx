@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useDisconnect } from 'wagmi';
 import { ethers } from 'ethers';
 import {
   UserRole,
@@ -49,6 +50,7 @@ import { TelemetryMetrics } from '@/components/TelemetryMetrics';
 import { NFTAssetGallery } from '@/components/NFTAssetGallery';
 import { DIDDocumentModal } from '@/components/DIDDocumentModal';
 import { WalletSelectModal } from '@/components/WalletSelectModal';
+import { RoleAssignment } from '@/components/RoleAssignment';
 import { AlertCircleIcon } from '@/components/Icons';
 
 const PIPELINE_NODES: NodeItem[] = [
@@ -87,6 +89,8 @@ const PIPELINE_NODES: NodeItem[] = [
 ];
 
 export default function Home() {
+  const { disconnect: wagmiDisconnect } = useDisconnect();
+
   // Navigation & Pipeline State
   const [activeNode, setActiveNode] = useState<NodeItem>(PIPELINE_NODES[3]);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -100,8 +104,17 @@ export default function Home() {
   const [connectedWalletType, setConnectedWalletType] = useState<string>('');
   const [activeWalletProvider, setActiveWalletProvider] = useState<any>(null);
 
-  // Contract & Asset State
-  const [contractAddress, setContractAddress] = useState<string>(DEFAULT_CONTRACT_ADDRESS);
+  // Contract & Asset State (starts empty when disconnected so no info is present in text box)
+  const [contractAddress, setContractAddress] = useState<string>('');
+
+  const handleContractAddressChange = (addr: string) => {
+    setContractAddress(addr);
+    if (typeof window !== 'undefined') {
+      if (addr) localStorage.setItem('sentinel_contract_address', addr);
+      else localStorage.removeItem('sentinel_contract_address');
+    }
+    if (txStatus.toLowerCase().includes('error')) setTxStatus('');
+  };
   const [contractStats, setContractStats] = useState<ContractSystemStats | null>(null);
   const [isStatsLoading, setIsStatsLoading] = useState<boolean>(false);
   const [assetId, setAssetId] = useState<string>('');
@@ -178,28 +191,55 @@ export default function Home() {
     }
   }, [contractAddress, walletAddress]);
 
+  const handleDisconnect = useCallback(() => {
+    try {
+      wagmiDisconnect?.();
+    } catch {}
+    setWalletAddress(null);
+    setUserDID('');
+    setDidDocument(null);
+    setIsAuthenticated(false);
+    setVerifiedOnChainRole('');
+    setUserRole('User (Asset Owner)');
+    setContractAddress('');
+    setContractStats(null);
+    setAssetId('');
+    setSelectedFile(null);
+    setEncryptedPayload(null);
+    setPinnedCid('');
+    setDecryptedResult(null);
+    setTxStatus('');
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('sentinel_contract_address');
+      } catch {}
+    }
+  }, [wagmiDisconnect]);
+
   // Initial load
   useEffect(() => {
     fetchAuditLogs();
     fetchNFTs();
 
     // Check existing wallet connection
+    // Listen for wallet account disconnect or account changes
     if (typeof window !== 'undefined' && (window as any).ethereum) {
       const eth = (window as any).ethereum;
-      eth
-        .request({ method: 'eth_accounts' })
-        .then((accounts: string[]) => {
-          if (accounts && accounts.length > 0) {
-            const addr = accounts[0];
-            setWalletAddress(addr);
-            const did = generateDID(addr);
-            setUserDID(did);
-            setDidDocument(createDIDDocument(addr, userRole));
-          }
-        })
-        .catch(console.error);
+      const handleAccountsChanged = (accounts: string[]) => {
+        if (!accounts || accounts.length === 0) {
+          handleDisconnect();
+        }
+      };
+
+      eth.on?.('accountsChanged', handleAccountsChanged);
+      eth.on?.('disconnect', handleDisconnect);
+
+      return () => {
+        eth.removeListener?.('accountsChanged', handleAccountsChanged);
+        eth.removeListener?.('disconnect', handleDisconnect);
+      };
     }
-  }, [fetchAuditLogs, fetchNFTs, userRole]);
+  }, [fetchAuditLogs, fetchNFTs, userRole, handleDisconnect]);
 
   // Query contract stats on contractAddress change
   useEffect(() => {
@@ -288,11 +328,15 @@ export default function Home() {
         }
 
         setIsAuthenticated(true);
+        const savedContract = (typeof window !== 'undefined' ? localStorage.getItem('sentinel_contract_address') : '') || DEFAULT_CONTRACT_ADDRESS || '';
+        if (savedContract) {
+          setContractAddress(savedContract);
+        }
         setTxStatus(
           `Authenticated successfully via ${walletLabel}. Decentralized Identity [${formatDID(did)}] verified for [${userRole}].`
         );
 
-        if (contractAddress) {
+        if (savedContract || contractAddress) {
           fetchContractStats();
         }
       } catch (signErr: any) {
@@ -316,15 +360,6 @@ export default function Home() {
 
   const handleConnectWallet = () => {
     setIsWalletModalOpen(true);
-  };
-
-  const handleDisconnect = () => {
-    setWalletAddress(null);
-    setUserDID('');
-    setDidDocument(null);
-    setIsAuthenticated(false);
-    setVerifiedOnChainRole('');
-    setTxStatus('Wallet disconnected. Sealed files remain accessible via CIPHERTEXT or IPFS Storage CID.');
   };
 
   // File Upload
@@ -672,7 +707,7 @@ export default function Home() {
     setTxStatus('Deploying SentinelAuditRegistry.sol directly to Polygon Amoy via wallet...');
     try {
       const result = await deploySentinelRegistry(activeWalletProvider);
-      setContractAddress(result.address);
+      handleContractAddressChange(result.address);
       setTxStatus(`Success: SentinelAuditRegistry deployed to Polygon Amoy! Contract Address: ${result.address}. Deployment Tx: ${result.txHash.slice(0, 18)}...`);
       fetchContractStats();
     } catch (err: any) {
@@ -742,6 +777,7 @@ export default function Home() {
               pinnedCID={pinnedCid}
               decryptedResult={decryptedResult}
               isProcessing={isProcessing}
+              isAuthenticated={isAuthenticated}
               onFileChange={handleFileChange}
               onEncrypt={handleEncrypt}
               onPinIPFS={handlePinIPFS}
@@ -751,8 +787,8 @@ export default function Home() {
             />
           </div>
 
-          {/* Right Column: Smart Contract Audit Panel */}
-          <div className="lg:col-span-5">
+          {/* Right Column: Smart Contract Audit Panel & RBAC Role Assignment */}
+          <div className="lg:col-span-5 space-y-6">
             <OnChainAuditPanel
               contractAddress={contractAddress}
               assetId={assetId}
@@ -761,10 +797,7 @@ export default function Home() {
               isAuthenticated={isAuthenticated}
               userRole={userRole}
               walletAddress={walletAddress}
-              onContractAddressChange={(addr) => {
-                setContractAddress(addr);
-                if (txStatus.toLowerCase().includes('error')) setTxStatus('');
-              }}
+              onContractAddressChange={handleContractAddressChange}
               onAssetIdChange={(cid) => {
                 setAssetId(cid);
                 if (txStatus.toLowerCase().includes('error')) setTxStatus('');
@@ -772,6 +805,22 @@ export default function Home() {
               onExecuteLiveTx={handleExecuteLiveTx}
               onDeployContract={handleDeployContract}
               isDeploying={isDeploying}
+            />
+
+            {/* Smart Contract RBAC Role Assignment */}
+            <RoleAssignment
+              contractAddress={contractAddress}
+              walletAddress={walletAddress || undefined}
+              currentUserRole={userRole}
+              isAuthenticated={isAuthenticated}
+              onContractAddressChange={handleContractAddressChange}
+              onDeployContract={handleDeployContract}
+              isDeploying={isDeploying}
+              onRoleAssigned={(target, role, hash) => {
+                setTxStatus(`Role ${role} successfully granted to ${target.slice(0, 8)}... Tx: ${hash.slice(0, 16)}...`);
+                fetchContractStats();
+                fetchAuditLogs();
+              }}
             />
           </div>
 
@@ -794,7 +843,7 @@ export default function Home() {
 
           {/* Immutable Audit Ledger Logs Table */}
           <div className="lg:col-span-12">
-            <AuditLedgerTable logs={auditLogs} />
+            <AuditLedgerTable logs={auditLogs} isAuthenticated={isAuthenticated} />
           </div>
 
         </div>
