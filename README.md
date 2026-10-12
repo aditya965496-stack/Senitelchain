@@ -137,3 +137,9 @@ To deploy using **Remix IDE**:
 * **Digital Signatures:** `ECDSA` (`secp256k1`) over EVM `personal_sign` and EIP-712
 * **Decentralized Identifiers:** W3C DID Core 1.0 (`did:sentinel:80002:<address>`)
 * **NFT Standard:** ERC-721 Non-Fungible Token standard
+
+
+
+
+
+.
